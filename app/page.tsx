@@ -11,6 +11,7 @@ import {
 import {
   getProductPreset,
   productPresets,
+  type ProductPreset,
   type ProductPresetId,
 } from "@/lib/product-presets";
 
@@ -113,7 +114,7 @@ export default function Home() {
               <div className="mt-3 rounded-lg border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-slate-200">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-semibold text-emerald-300">
-                    Starter estimate—verify your actual costs
+                    Starter estimate - verify your actual costs
                   </p>
                   {presetModified ? (
                     <span className="rounded-full bg-amber-300 px-2 py-0.5 text-xs font-bold text-amber-950">
@@ -122,10 +123,24 @@ export default function Home() {
                   ) : null}
                 </div>
                 <p className="mt-1">{selectedPreset.description}</p>
-                <p className="mt-2 text-xs text-slate-400">
-                  Replace these values with your actual material, labor,
-                  machine, fee, packaging, and shipping costs.
-                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="rounded bg-slate-700 px-2 py-1 font-semibold text-white">
+                    {assumptionLabel(selectedPreset.assumptionType)}
+                  </span>
+                  <span className="text-slate-400">
+                    Reviewed {selectedPreset.lastReviewed}
+                  </span>
+                  {selectedPreset.sourceLabel ? (
+                    <span className="min-w-0 break-words text-slate-300">
+                      Basis: {selectedPreset.sourceLabel}
+                    </span>
+                  ) : null}
+                </div>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-400">
+                  {selectedPreset.assumptionNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
               </div>
             </div>
 
@@ -345,6 +360,17 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+function assumptionLabel(type: ProductPreset["assumptionType"]): string {
+  const labels = {
+    "business-baseline": "Business baseline",
+    "verified-supplier": "Supplier price verified",
+    "amortized-estimate": "Amortized estimate",
+    template: "Custom template",
+  } satisfies Record<ProductPreset["assumptionType"], string>;
+
+  return labels[type];
 }
 
 function TextInput({
