@@ -8,27 +8,20 @@ import {
   percent,
   type PricingInput,
 } from "@/lib/calculations";
+import {
+  getProductPreset,
+  productPresets,
+  type ProductPresetId,
+} from "@/lib/product-presets";
 
-const defaultInput: PricingInput = {
-  productName: "4-Piece Slate Coaster Set",
-  materialCost: 5.5,
-  packagingCost: 2.25,
-  otherCost: 1,
-  wastePercentage: 10,
-  machineMinutes: 62,
-  machineHourlyRate: 7.75,
-  laborMinutes: 20,
-  laborHourlyRate: 40,
-  marketplaceFeePercentage: 10,
-  processingFeePercentage: 3,
-  fixedTransactionFee: 0.3,
-  shippingCost: 7.25,
-  customerPaysShipping: false,
-  desiredMarginPercentage: 30,
-};
+const initialPreset = getProductPreset("slate-coasters");
 
 export default function Home() {
-  const [input, setInput] = useState<PricingInput>(defaultInput);
+  const [selectedPresetId, setSelectedPresetId] =
+    useState<ProductPresetId>(initialPreset.id);
+  const [input, setInput] = useState<PricingInput>({ ...initialPreset.values });
+  const [presetModified, setPresetModified] = useState(false);
+  const selectedPreset = getProductPreset(selectedPresetId);
 
   const calculation = useMemo(() => calculatePricing(input), [input]);
 
@@ -44,10 +37,23 @@ export default function Home() {
     field: keyof PricingInput,
     value: string | number | boolean
   ) {
+    setPresetModified(true);
     setInput((current) => ({
       ...current,
       [field]: typeof current[field] === "number" ? Number(value) : value,
     }));
+  }
+
+  function selectPreset(id: ProductPresetId) {
+    const preset = getProductPreset(id);
+    setSelectedPresetId(id);
+    setInput({ ...preset.values });
+    setPresetModified(false);
+  }
+
+  function resetPreset() {
+    setInput({ ...selectedPreset.values });
+    setPresetModified(false);
   }
 
   return (
@@ -71,9 +77,57 @@ export default function Home() {
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl sm:p-6">
-            <h2 className="mb-6 text-2xl font-semibold">
+            <h2 className="mb-5 text-2xl font-semibold">
               Product Calculator
             </h2>
+
+            <div className="mb-6 border-b border-slate-700 pb-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="min-w-0 flex-1">
+                  <span className="mb-2 block text-sm font-medium text-slate-300">
+                    Product preset
+                  </span>
+                  <select
+                    value={selectedPresetId}
+                    onChange={(event) =>
+                      selectPreset(event.target.value as ProductPresetId)
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none ring-emerald-400 focus:ring-2"
+                  >
+                    {productPresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={resetPreset}
+                  className="shrink-0 rounded-xl border border-slate-600 px-4 py-3 text-sm font-semibold text-white hover:border-emerald-400 hover:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                >
+                  Reset Preset
+                </button>
+              </div>
+
+              <div className="mt-3 rounded-lg border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-slate-200">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-semibold text-emerald-300">
+                    Starter estimate—verify your actual costs
+                  </p>
+                  {presetModified ? (
+                    <span className="rounded-full bg-amber-300 px-2 py-0.5 text-xs font-bold text-amber-950">
+                      Modified
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1">{selectedPreset.description}</p>
+                <p className="mt-2 text-xs text-slate-400">
+                  Replace these values with your actual material, labor,
+                  machine, fee, packaging, and shipping costs.
+                </p>
+              </div>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <TextInput
