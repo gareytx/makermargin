@@ -62,6 +62,13 @@ const numericFields = [
   ["desiredMarginPercentage", "Desired profit margin"],
 ] as const satisfies ReadonlyArray<readonly [keyof PricingInput, string]>;
 
+const percentageFields = [
+  ["wastePercentage", "Waste percentage"],
+  ["marketplaceFeePercentage", "Marketplace fee percentage"],
+  ["processingFeePercentage", "Processing fee percentage"],
+  ["desiredMarginPercentage", "Desired profit margin"],
+] as const satisfies ReadonlyArray<readonly [keyof PricingInput, string]>;
+
 export function validatePricingInput(input: PricingInput): PricingValidation {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -72,6 +79,12 @@ export function validatePricingInput(input: PricingInput): PricingValidation {
       errors.push(`${label} must be a finite number.`);
     } else if (value < 0) {
       errors.push(`${label} cannot be negative.`);
+    }
+  }
+
+  for (const [field, label] of percentageFields) {
+    if (Number.isFinite(input[field]) && input[field] > 100) {
+      errors.push(`${label} must be between 0% and 100%.`);
     }
   }
 
