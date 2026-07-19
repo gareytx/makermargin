@@ -9,20 +9,21 @@ import {
   type PricingInput,
 } from "@/lib/calculations";
 import {
-  getProductPreset,
+  getCalculatorStartingPoint,
   productPresets,
-  type ProductPreset,
-  type ProductPresetId,
+  customProductTemplate,
+  type CalculatorStartingPoint,
+  type CalculatorStartingPointId,
 } from "@/lib/product-presets";
 
-const initialPreset = getProductPreset("slate-coasters");
+const initialPreset = getCalculatorStartingPoint("slate-coasters");
 
 export default function Home() {
   const [selectedPresetId, setSelectedPresetId] =
-    useState<ProductPresetId>(initialPreset.id);
+    useState<CalculatorStartingPointId>(initialPreset.id);
   const [input, setInput] = useState<PricingInput>({ ...initialPreset.values });
   const [presetModified, setPresetModified] = useState(false);
-  const selectedPreset = getProductPreset(selectedPresetId);
+  const selectedPreset = getCalculatorStartingPoint(selectedPresetId);
 
   const calculation = useMemo(() => calculatePricing(input), [input]);
 
@@ -45,14 +46,33 @@ export default function Home() {
     }));
   }
 
-  function selectPreset(id: ProductPresetId) {
-    const preset = getProductPreset(id);
+  function selectPreset(id: CalculatorStartingPointId): boolean {
+    if (
+      presetModified &&
+      !window.confirm(
+        "Replace your modified values with this starting point? Your edits will be lost."
+      )
+    ) {
+      return false;
+    }
+
+    const preset = getCalculatorStartingPoint(id);
     setSelectedPresetId(id);
     setInput({ ...preset.values });
     setPresetModified(false);
+    return true;
   }
 
   function resetPreset() {
+    if (
+      presetModified &&
+      !window.confirm(
+        "Reset this starting point? Your modified values will be lost."
+      )
+    ) {
+      return;
+    }
+
     setInput({ ...selectedPreset.values });
     setPresetModified(false);
   }
@@ -90,16 +110,26 @@ export default function Home() {
                   </span>
                   <select
                     value={selectedPresetId}
-                    onChange={(event) =>
-                      selectPreset(event.target.value as ProductPresetId)
-                    }
+                    onChange={(event) => {
+                      const changed = selectPreset(
+                        event.target.value as CalculatorStartingPointId
+                      );
+                      if (!changed) event.target.value = selectedPresetId;
+                    }}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none ring-emerald-400 focus:ring-2"
                   >
-                    {productPresets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label}
+                    <optgroup label="Start from scratch">
+                      <option value={customProductTemplate.id}>
+                        {customProductTemplate.label}
                       </option>
-                    ))}
+                    </optgroup>
+                    <optgroup label="Product presets">
+                      {productPresets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </label>
                 <button
@@ -117,10 +147,18 @@ export default function Home() {
                     Starter estimate - verify your actual costs
                   </p>
                   {presetModified ? (
-                    <span className="rounded-full bg-amber-300 px-2 py-0.5 text-xs font-bold text-amber-950">
+                    <span
+                      aria-hidden="true"
+                      className="rounded-full bg-amber-300 px-2 py-0.5 text-xs font-bold text-amber-950"
+                    >
                       Modified
                     </span>
                   ) : null}
+                  <span role="status" aria-live="polite" className="sr-only">
+                    {presetModified
+                      ? "Calculator values modified."
+                      : "Calculator values match the selected starting point."}
+                  </span>
                 </div>
                 <p className="mt-1">{selectedPreset.description}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -362,13 +400,15 @@ export default function Home() {
   );
 }
 
-function assumptionLabel(type: ProductPreset["assumptionType"]): string {
+function assumptionLabel(
+  type: CalculatorStartingPoint["assumptionType"]
+): string {
   const labels = {
     "business-baseline": "Business baseline",
     "verified-supplier": "Supplier price verified",
     "amortized-estimate": "Amortized estimate",
     template: "Custom template",
-  } satisfies Record<ProductPreset["assumptionType"], string>;
+  } satisfies Record<CalculatorStartingPoint["assumptionType"], string>;
 
   return labels[type];
 }

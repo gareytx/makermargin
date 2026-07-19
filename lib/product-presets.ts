@@ -1,7 +1,6 @@
 import type { PricingInput } from "./calculations";
 
 export type ProductPresetId =
-  | "custom"
   | "slate-coasters"
   | "metal-wallet-card"
   | "leather-journal"
@@ -9,49 +8,69 @@ export type ProductPresetId =
   | "digital-print";
 
 export type ProductPreset = {
-  id: ProductPresetId;
-  label: string;
-  description: string;
-  assumptionType:
+  readonly id: ProductPresetId;
+  readonly label: string;
+  readonly description: string;
+  readonly assumptionType:
     | "verified-supplier"
     | "business-baseline"
-    | "amortized-estimate"
-    | "template";
-  lastReviewed: string;
-  assumptionNotes: string[];
-  sourceLabel?: string;
-  values: PricingInput;
+    | "amortized-estimate";
+  readonly lastReviewed: string;
+  readonly assumptionNotes: readonly string[];
+  readonly sourceLabel?: string;
+  readonly values: Readonly<PricingInput>;
 };
 
-export const productPresets: readonly ProductPreset[] = [
-  {
-    id: "custom",
-    label: "Custom product",
-    description: "A blank custom template with sample values that must all be replaced.",
-    assumptionType: "template",
-    lastReviewed: "2026-07-14",
-    assumptionNotes: [
-      "Every value is a placeholder, not an industry average or verified cost.",
-      "Replace all costs, rates, fees, percentages, and production times before using the result.",
-    ],
-    values: {
-      productName: "Custom Product",
-      materialCost: 5,
-      packagingCost: 1,
-      otherCost: 0,
-      wastePercentage: 5,
-      machineMinutes: 0,
-      machineHourlyRate: 7.75,
-      laborMinutes: 30,
-      laborHourlyRate: 40,
-      marketplaceFeePercentage: 10,
-      processingFeePercentage: 3,
-      fixedTransactionFee: 0.3,
-      shippingCost: 5,
-      customerPaysShipping: false,
-      desiredMarginPercentage: 30,
-    },
+export type CustomProductTemplate = {
+  readonly id: "custom";
+  readonly label: "Custom product";
+  readonly description: string;
+  readonly assumptionType: "template";
+  readonly lastReviewed: string;
+  readonly assumptionNotes: readonly string[];
+  readonly sourceLabel?: undefined;
+  readonly values: Readonly<PricingInput>;
+};
+
+export type CalculatorStartingPoint = ProductPreset | CustomProductTemplate;
+export type CalculatorStartingPointId = ProductPresetId | "custom";
+
+function freezeStartingPoint<T extends CalculatorStartingPoint>(item: T): T {
+  Object.freeze(item.values);
+  Object.freeze(item.assumptionNotes);
+  return Object.freeze(item);
+}
+
+export const customProductTemplate: CustomProductTemplate = freezeStartingPoint({
+  id: "custom",
+  label: "Custom product",
+  description: "A blank custom template with sample values that must all be replaced.",
+  assumptionType: "template",
+  lastReviewed: "2026-07-14",
+  assumptionNotes: [
+    "Every value is a placeholder, not an industry average or verified cost.",
+    "Replace all costs, rates, fees, percentages, and production times before using the result.",
+  ],
+  values: {
+    productName: "Custom Product",
+    materialCost: 5,
+    packagingCost: 1,
+    otherCost: 0,
+    wastePercentage: 5,
+    machineMinutes: 0,
+    machineHourlyRate: 7.75,
+    laborMinutes: 30,
+    laborHourlyRate: 40,
+    marketplaceFeePercentage: 10,
+    processingFeePercentage: 3,
+    fixedTransactionFee: 0.3,
+    shippingCost: 5,
+    customerPaysShipping: false,
+    desiredMarginPercentage: 30,
   },
+});
+
+export const productPresets: readonly ProductPreset[] = Object.freeze([
   {
     id: "slate-coasters",
     label: "4-piece slate coaster set",
@@ -118,7 +137,7 @@ export const productPresets: readonly ProductPreset[] = [
     lastReviewed: "2026-07-14",
     sourceLabel: "MakerFlo Laserette Journal",
     assumptionNotes: [
-      "The $11.95 material cost is the current single-unit supplier price.",
+      "The $11.95 single-unit supplier price was reviewed July 14, 2026.",
       "Case and bulk purchasing may reduce the blank cost.",
       "The blank includes gift-ready product packaging.",
       "The $1.50 packaging value represents an estimated outbound mailer and protective material.",
@@ -150,7 +169,7 @@ export const productPresets: readonly ProductPreset[] = [
     lastReviewed: "2026-07-14",
     sourceLabel: "MakerFlo Premium Marble and Wood Cutting Board",
     assumptionNotes: [
-      "The $23.95 material cost represents a current premium single-unit blank.",
+      "The $23.95 premium single-unit blank price was reviewed July 14, 2026.",
       "Case and bulk costs may be lower.",
       "Packaging, production time, and shipping are conservative editable estimates.",
       "Makers using a less expensive wood blank should replace the material cost.",
@@ -206,10 +225,16 @@ export const productPresets: readonly ProductPreset[] = [
       desiredMarginPercentage: 30,
     },
   },
-];
+].map((preset) => freezeStartingPoint(preset as ProductPreset)));
 
 export function getProductPreset(id: ProductPresetId): ProductPreset {
   const preset = productPresets.find((candidate) => candidate.id === id);
   if (!preset) throw new Error(`Unknown product preset: ${id}`);
   return preset;
+}
+
+export function getCalculatorStartingPoint(
+  id: CalculatorStartingPointId
+): CalculatorStartingPoint {
+  return id === "custom" ? customProductTemplate : getProductPreset(id);
 }
