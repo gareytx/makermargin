@@ -18,6 +18,29 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Testing
+
+Run the complete test suite with:
+
+```bash
+npm test
+```
+
+Pricing and preset-data tests use Node.js's built-in test runner. UI tests use
+Vitest, jsdom, and React Testing Library.
+
+Run lint with:
+
+```bash
+npm run lint
+```
+
+Run the production build with:
+
+```bash
+npm run build
+```
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More
