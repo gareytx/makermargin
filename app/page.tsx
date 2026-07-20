@@ -8,27 +8,22 @@ import {
   percent,
   type PricingInput,
 } from "@/lib/calculations";
+import {
+  getCalculatorStartingPoint,
+  productPresets,
+  customProductTemplate,
+  type CalculatorStartingPoint,
+  type CalculatorStartingPointId,
+} from "@/lib/product-presets";
 
-const defaultInput: PricingInput = {
-  productName: "4-Piece Slate Coaster Set",
-  materialCost: 5.5,
-  packagingCost: 2.25,
-  otherCost: 1,
-  wastePercentage: 10,
-  machineMinutes: 62,
-  machineHourlyRate: 7.75,
-  laborMinutes: 20,
-  laborHourlyRate: 40,
-  marketplaceFeePercentage: 10,
-  processingFeePercentage: 3,
-  fixedTransactionFee: 0.3,
-  shippingCost: 7.25,
-  customerPaysShipping: false,
-  desiredMarginPercentage: 30,
-};
+const initialPreset = getCalculatorStartingPoint("slate-coasters");
 
 export default function Home() {
-  const [input, setInput] = useState<PricingInput>(defaultInput);
+  const [selectedPresetId, setSelectedPresetId] =
+    useState<CalculatorStartingPointId>(initialPreset.id);
+  const [input, setInput] = useState<PricingInput>({ ...initialPreset.values });
+  const [presetModified, setPresetModified] = useState(false);
+  const selectedPreset = getCalculatorStartingPoint(selectedPresetId);
 
   const calculation = useMemo(() => calculatePricing(input), [input]);
 
@@ -44,10 +39,42 @@ export default function Home() {
     field: keyof PricingInput,
     value: string | number | boolean
   ) {
+    setPresetModified(true);
     setInput((current) => ({
       ...current,
       [field]: typeof current[field] === "number" ? Number(value) : value,
     }));
+  }
+
+  function selectPreset(id: CalculatorStartingPointId): boolean {
+    if (
+      presetModified &&
+      !window.confirm(
+        "Replace your modified values with this starting point? Your edits will be lost."
+      )
+    ) {
+      return false;
+    }
+
+    const preset = getCalculatorStartingPoint(id);
+    setSelectedPresetId(id);
+    setInput({ ...preset.values });
+    setPresetModified(false);
+    return true;
+  }
+
+  function resetPreset() {
+    if (
+      presetModified &&
+      !window.confirm(
+        "Reset this starting point? Your modified values will be lost."
+      )
+    ) {
+      return;
+    }
+
+    setInput({ ...selectedPreset.values });
+    setPresetModified(false);
   }
 
   return (
@@ -71,9 +98,89 @@ export default function Home() {
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl sm:p-6">
-            <h2 className="mb-6 text-2xl font-semibold">
+            <h2 className="mb-5 text-2xl font-semibold">
               Product Calculator
             </h2>
+
+            <div className="mb-6 border-b border-slate-700 pb-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="min-w-0 flex-1">
+                  <span className="mb-2 block text-sm font-medium text-slate-300">
+                    Product preset
+                  </span>
+                  <select
+                    value={selectedPresetId}
+                    onChange={(event) => {
+                      const changed = selectPreset(
+                        event.target.value as CalculatorStartingPointId
+                      );
+                      if (!changed) event.target.value = selectedPresetId;
+                    }}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none ring-emerald-400 focus:ring-2"
+                  >
+                    <optgroup label="Start from scratch">
+                      <option value={customProductTemplate.id}>
+                        {customProductTemplate.label}
+                      </option>
+                    </optgroup>
+                    <optgroup label="Product presets">
+                      {productPresets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={resetPreset}
+                  className="shrink-0 rounded-xl border border-slate-600 px-4 py-3 text-sm font-semibold text-white hover:border-emerald-400 hover:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                >
+                  Reset Preset
+                </button>
+              </div>
+
+              <div className="mt-3 rounded-lg border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-slate-200">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-semibold text-emerald-300">
+                    Starter estimate - verify your actual costs
+                  </p>
+                  {presetModified ? (
+                    <span
+                      aria-hidden="true"
+                      className="rounded-full bg-amber-300 px-2 py-0.5 text-xs font-bold text-amber-950"
+                    >
+                      Modified
+                    </span>
+                  ) : null}
+                  <span role="status" aria-live="polite" className="sr-only">
+                    {presetModified
+                      ? "Calculator values modified."
+                      : "Calculator values match the selected starting point."}
+                  </span>
+                </div>
+                <p className="mt-1">{selectedPreset.description}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="rounded bg-slate-700 px-2 py-1 font-semibold text-white">
+                    {assumptionLabel(selectedPreset.assumptionType)}
+                  </span>
+                  <span className="text-slate-400">
+                    Reviewed {selectedPreset.lastReviewed}
+                  </span>
+                  {selectedPreset.sourceLabel ? (
+                    <span className="min-w-0 break-words text-slate-300">
+                      Basis: {selectedPreset.sourceLabel}
+                    </span>
+                  ) : null}
+                </div>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-400">
+                  {selectedPreset.assumptionNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <TextInput
@@ -291,6 +398,19 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+function assumptionLabel(
+  type: CalculatorStartingPoint["assumptionType"]
+): string {
+  const labels = {
+    "business-baseline": "Business baseline",
+    "verified-supplier": "Supplier price verified",
+    "amortized-estimate": "Amortized estimate",
+    template: "Custom template",
+  } satisfies Record<CalculatorStartingPoint["assumptionType"], string>;
+
+  return labels[type];
 }
 
 function TextInput({
