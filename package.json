@@ -7,7 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test lib/calculations.test.mjs lib/product-presets.test.mjs && vitest run"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test lib/calculations.test.mjs lib/product-presets.test.mjs && vitest run",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:reset": "supabase db reset",
+    "supabase:types": "supabase gen types typescript --local | node -e \"let data = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (chunk) => data += chunk); process.stdin.on('end', () => process.stdout.write(data.trimEnd() + '\\n'));\" > lib/supabase/database.types.ts",
+    "test:db": "supabase test db supabase/tests/database --local"
   },
   "dependencies": {
     "next": "16.2.9",
@@ -25,6 +30,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "jsdom": "^29.1.1",
+    "supabase": "^2.109.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"
