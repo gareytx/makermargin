@@ -125,6 +125,8 @@ It should not be included in the Version 0.3 migration unless a profile-dependen
 | `created_at` | `timestamptz` | Not null; default `now()` |
 | `updated_at` | `timestamptz` | Not null; default `now()`; maintained by trigger |
 
+`pricing_inputs` and `calculation_snapshot` are versioned JSON objects. Each contains its own schema version, the semantic basis `per_sellable_product`, and its snapshot data. The basis means one sellable product in one standard sale: a four-piece coaster set is one product, not four comparison units. The top-level `formula_version` remains authoritative for the pricing formula used by the saved record.
+
 Required database details:
 
 - Foreign key: `saved_products.user_id -> auth.users.id ON DELETE CASCADE`.
@@ -134,6 +136,9 @@ Required database details:
 - No unique constraint on product names; duplicates and copied names are allowed.
 - A `BEFORE UPDATE` trigger sets `updated_at = now()`. Clients must not be trusted to supply update timestamps.
 - The database stores JSON snapshots, while application validation enforces the complete schema before writes and after reads. JSONB checks alone do not establish a trusted `PricingInput`.
+- No migration change is required for snapshot envelopes because both columns already store JSONB objects.
+- Version-aware parsing must preserve the distinction between missing and zero. A missing optional field is unknown or unavailable; numeric zero is a known value. Parsers never supply zero for absent data or rewrite a historical snapshot.
+- Malformed objects and invalid or unsupported schema versions fail safely and cannot be used as trusted calculation inputs.
 
 ### Typed application representation
 
@@ -144,12 +149,25 @@ import type { PricingInput, PricingResult } from "@/lib/calculations";
 import type { ProductPresetId } from "@/lib/product-presets";
 
 export type FormulaVersion = "pricing-v1";
+export type SnapshotBasis = "per_sellable_product";
+export type PricingInputSnapshotVersion = "pricing-input-v1";
+export type CalculationSnapshotVersion = "calculation-snapshot-v1";
 export type PendingSaveDraftVersion = 1;
 
+export type PricingInputSnapshot = {
+  schemaVersion: PricingInputSnapshotVersion;
+  basis: SnapshotBasis;
+  data: PricingInput;
+};
+
 export type CalculationSnapshot = {
-  result: PricingResult;
-  calculatedAt: string;
-  warnings: string[];
+  schemaVersion: CalculationSnapshotVersion;
+  basis: SnapshotBasis;
+  data: {
+    result: PricingResult;
+    calculatedAt: string;
+    warnings: string[];
+  };
 };
 
 export type SavedProduct = {
@@ -157,7 +175,7 @@ export type SavedProduct = {
   userId: string;
   name: string;
   sourcePresetId: ProductPresetId | null;
-  pricingInputs: PricingInput;
+  pricingInputs: PricingInputSnapshot;
   calculationSnapshot: CalculationSnapshot;
   formulaVersion: FormulaVersion;
   createdAt: string;
@@ -189,7 +207,7 @@ export type PendingSaveDraft = {
   id: string;
   createdAt: string;
   expiresAt: string;
-  pricingInputs: PricingInput;
+  pricingInputs: PricingInputSnapshot;
   sourcePresetId: ProductPresetId | null;
   intendedProductName: string;
   returnPath: "/";
@@ -199,11 +217,13 @@ export type RecalculationPreview = {
   savedProductId: string;
   originalFormulaVersion: FormulaVersion | string;
   currentFormulaVersion: FormulaVersion;
-  pricingInputs: PricingInput;
+  pricingInputs: PricingInputSnapshot;
   calculationSnapshot: CalculationSnapshot;
   createdAt: string;
 };
 ```
+
+`CalculationSnapshot` does not repeat `formulaVersion` in Version 0.3 because the saved record's top-level `formula_version` is authoritative. If a future self-contained export repeats it inside the snapshot, runtime validation must require exact equality with the top-level value and reject inconsistent records safely.
 
 The server derives `userId` from the authenticated user, never from an untrusted insert/update payload. Update operations must distinguish rename-only updates from calculation updates so fields that must remain internally consistent are written together.
 
@@ -290,6 +310,7 @@ An authenticated account menu provides sign out. Signing out returns saved-produ
 - Reuse `validatePricingInput` and `calculatePricing`; do not duplicate pricing formulas in UI, persistence, or Supabase code.
 - Never save a normal calculation snapshot when pricing validation fails or any numeric result is non-finite.
 - Validate and parse JSONB records at the application boundary before treating them as typed data. Reject malformed or unsupported snapshots safely.
+- Validate the schema version and `per_sellable_product` basis of both JSON snapshots. Preserve missing optional fields as unavailable and numeric zero as an explicit known value; never backfill missing values while parsing.
 - Validate names on client and server boundaries; trim whitespace and enforce the database maximum.
 - Authenticate every saved-product mutation and derive ownership from the verified session.
 - RLS is mandatory in migrations and tested against cross-user access.
@@ -371,6 +392,7 @@ Tests must cover at minimum all approved scenarios: anonymous use; registration 
 - Authentication interruptions never discard the active calculator draft; temporary drafts expire after 24 hours and are removed only after successful save, explicit discard, or validated expiration/incompatibility handling.
 - Authenticated users can create, list, open, edit, save, rename, duplicate, and confirm-delete their private products.
 - Saved rows contain validated complete inputs, a matching finite calculation snapshot, and an immutable formula-version identifier.
+- Saved rows use supported, independently versioned input and calculation snapshot envelopes with the explicit `per_sellable_product` basis; malformed or unsupported snapshots fail safely.
 - Preset-derived saves remain independent of future preset definitions.
 - Historical rows are not silently recalculated; explicit recalculation is validated and user-confirmed.
 - RLS and database constraints enforce ownership and reject cross-user access in automated tests.
@@ -400,7 +422,7 @@ Tests must cover at minimum all approved scenarios: anonymous use; registration 
 ## Open Risks and Assumptions
 
 - **Auth rendering architecture:** The exact Next.js/Supabase server-client integration must follow the installed Next.js documentation and current Supabase guidance at implementation time.
-- **JSON evolution:** JSONB provides snapshot flexibility but requires version-aware runtime parsing. Formula version identifies calculation behavior, while a separate saved-record schema version may become necessary if the JSON shape changes independently.
+- **JSON evolution:** JSONB provides snapshot flexibility but requires version-aware runtime parsing. Formula version identifies calculation behavior; independent input and calculation snapshot schema versions identify JSON shape and semantics. Missing fields remain unavailable rather than becoming zero.
 - **Browser storage availability:** Privacy modes, quotas, or browser policy may make draft storage unavailable. The Save flow must fail visibly without replacing current calculator state.
 - **Preview URL churn:** Per-deployment preview URLs may not be practical to allowlist. Authentication must remain disabled on unapproved previews or use a stable hosted-development origin.
 - **Email delivery:** Confirmation and recovery depend on SMTP reputation and delivery. Delivery, bounce handling, expiration, and resend rate limits require operational verification.
