@@ -45,7 +45,14 @@ try {
   assert((await first.from("saved_products").update({ name: "Stolen" }).eq("id", other.data.id).select()).data.length === 0, "user cannot update another user's product");
   assert((await first.from("saved_products").delete().eq("id", other.data.id).select()).data.length === 0, "user cannot delete another user's product");
   assert(Boolean((await first.from("saved_products").update({ user_id: users[1] }).eq("id", custom.data.id)).error), "ownership cannot be transferred");
-  const before = await first.from("saved_products").select("*").eq("id", custom.data.id).single();
+  let before = await first.from("saved_products").select("*").eq("id", custom.data.id).single();
+  const profiledInputs = { ...structuredClone(before.data.pricing_inputs), schemaVersion: "pricing-input-v2", productionProfile: { schemaVersion: "production-profile-v1", unitsPerBatch: 2 }, cashProfile: { schemaVersion: "cash-profile-v1", upfrontCashCostPerUnit: 0 } };
+  const profiled = await first.from("saved_products").update({ pricing_inputs: profiledInputs }).eq("id", custom.data.id).select("*").single();
+  assert(!profiled.error && JSON.stringify(profiled.data.pricing_inputs.data) === JSON.stringify(before.data.pricing_inputs.data), "profile save preserves pricing data");
+  assert(JSON.stringify(profiled.data.calculation_snapshot) === JSON.stringify(before.data.calculation_snapshot), "profile save preserves calculation snapshot byte-for-byte");
+  assert(profiled.data.formula_version === before.data.formula_version, "profile save preserves formula version");
+  assert((await second.from("saved_products").update({ pricing_inputs: profiledInputs }).eq("id", custom.data.id).select()).data.length === 0, "another user cannot update a product profile");
+  before = profiled;
   const preview = structuredClone(before.data.calculation_snapshot); preview.data.result.hardCost = 99;
   const afterPreview = await first.from("saved_products").select("*").eq("id", custom.data.id).single();
   assert(afterPreview.data.calculation_snapshot.data.result.hardCost !== 99, "recalculation preview is non-destructive");
@@ -56,6 +63,8 @@ try {
   assert(!duplicate.error && duplicate.data.id !== custom.data.id, "duplicate has a separate ID");
   duplicate.data.pricing_inputs.data.productName = "Local mutation";
   assert((await first.from("saved_products").select("pricing_inputs").eq("id", custom.data.id).single()).data.pricing_inputs.data.productName !== "Local mutation", "duplicate snapshots are independent");
+  const cleared = await first.from("saved_products").update({ pricing_inputs: { schemaVersion: "pricing-input-v2", basis: "per_sellable_product", data: structuredClone(profiledInputs.data) } }).eq("id", custom.data.id).select("pricing_inputs").single();
+  assert(!cleared.error && !("productionProfile" in cleared.data.pricing_inputs) && !("cashProfile" in cleared.data.pricing_inputs), "clearing profile values removes empty envelopes");
   const ordered = await first.from("saved_products").select("id,updated_at").order("updated_at", { ascending: false }).order("id", { ascending: true });
   assert(!ordered.error && ordered.data.length >= 2, "list uses updated-at and ID ordering");
   assert(!(await first.from("saved_products").delete().eq("id", duplicate.data.id)).error && (await first.from("saved_products").select("id").eq("id", custom.data.id)).data.length === 1, "delete removes only selected product");

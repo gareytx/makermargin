@@ -13,6 +13,8 @@ export type {
   FormulaVersion,
   PricingInputSnapshot,
   PricingInputSnapshotVersion,
+  PricingInputSnapshotV1,
+  PricingInputSnapshotV2,
   SnapshotBasis,
 } from "./saved-product-snapshots";
 

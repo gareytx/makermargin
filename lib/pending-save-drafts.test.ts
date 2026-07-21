@@ -19,7 +19,7 @@ describe("pending save drafts", () => {
     expect(draft?.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(Date.parse(draft!.expiresAt) - Date.parse(draft!.createdAt)).toBe(86_400_000);
     expect(draft?.pricingInputs).toEqual({
-      schemaVersion: "pricing-input-v1",
+      schemaVersion: "pricing-input-v2",
       basis: "per_sellable_product",
       data: customProductTemplate.values,
     });
@@ -53,7 +53,7 @@ describe("pending save drafts", () => {
     const draft = createPendingSaveDraft(customProductTemplate.values, null, { storage })!;
     const unsupported = structuredClone(draft) as Record<string, unknown>;
     unsupported.pricingInputs = {
-      schemaVersion: "pricing-input-v2",
+      schemaVersion: "pricing-input-v3",
       basis: "per_sellable_product",
       data: customProductTemplate.values,
     };

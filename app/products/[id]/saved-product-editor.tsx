@@ -15,6 +15,7 @@ import {
   saveRecalculatedProductAction,
   updateSavedProductAction,
 } from "@/lib/saved-product-actions";
+import { ProductProfileEditor } from "./product-profile-editor";
 
 export function SavedProductEditor({ initialProduct }: { initialProduct: SavedProduct }) {
   const [product, setProduct] = useState(initialProduct);
@@ -22,11 +23,13 @@ export function SavedProductEditor({ initialProduct }: { initialProduct: SavedPr
   const [name, setName] = useState(product.name);
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState<CalculationSnapshot | null>(null);
+  const [profileDirty, setProfileDirty] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const calculation = useMemo(() => input ? calculatePricing(input) : null, [input]);
-  const modified = Boolean(input && product.pricingInputs &&
+  const pricingModified = Boolean(input && product.pricingInputs &&
     (name !== product.name || JSON.stringify(input) !== JSON.stringify(product.pricingInputs.data)));
+  const modified = pricingModified || profileDirty;
   const preset = productPresets.find((candidate) => candidate.id === product.sourcePresetId);
   const provenance = product.sourcePresetId === null ? "Started from scratch" :
     preset ? `Started from: ${preset.label}` : "Started from: Historical preset";
@@ -113,7 +116,7 @@ export function SavedProductEditor({ initialProduct }: { initialProduct: SavedPr
         <div className="mt-4 grid gap-3 sm:grid-cols-2">{numberFields.map(([field, label]) => <NumberField key={field} label={label} value={input[field]} onChange={(value) => updateField(field, value)} />)}</div>
         <label className="mt-4 flex gap-3"><input type="checkbox" checked={input.customerPaysShipping} onChange={(event) => updateField("customerPaysShipping", event.target.checked)} />Customer pays shipping separately</label>
         {calculation && !calculation.valid ? <div role="alert" className="mt-4 rounded border border-red-700 bg-red-950 p-3"><p className="font-semibold">Unable to calculate</p><ul className="list-disc pl-5 text-sm">{calculation.validation.errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
-        <div className="mt-5 flex flex-wrap gap-2"><button disabled={pending || !modified || !calculation?.valid} onClick={save} className="rounded bg-emerald-500 px-3 py-2 font-semibold text-slate-950 disabled:opacity-50">Save changes</button><button disabled={pending || name === product.name} onClick={rename} className="rounded border border-slate-600 px-3 py-2 disabled:opacity-50">Rename only</button><button disabled={pending || !modified} onClick={reset} className="rounded border border-slate-600 px-3 py-2 disabled:opacity-50">Reset</button></div>
+        <div className="mt-5 flex flex-wrap gap-2"><button disabled={pending || !pricingModified || !calculation?.valid} onClick={save} className="rounded bg-emerald-500 px-3 py-2 font-semibold text-slate-950 disabled:opacity-50">Save changes</button><button disabled={pending || name === product.name} onClick={rename} className="rounded border border-slate-600 px-3 py-2 disabled:opacity-50">Rename only</button><button disabled={pending || !pricingModified} onClick={reset} className="rounded border border-slate-600 px-3 py-2 disabled:opacity-50">Reset</button></div>
       </section>
       <section className="rounded-lg bg-white p-4 text-slate-950"><h2 className="text-xl font-semibold">Saved calculation</h2>{savedResult ? <ResultSummary result={savedResult} /> : <p className="mt-3 text-amber-800">Historical calculation snapshot is unsupported.</p>}
         <div className="mt-5 flex flex-wrap gap-2"><button disabled={pending || !product.pricingInputs} onClick={recalculate} className="rounded border border-slate-400 px-3 py-2">Recalculate with current formula</button><button disabled={pending} onClick={duplicate} className="rounded border border-slate-400 px-3 py-2">Duplicate</button><button disabled={pending} onClick={remove} className="rounded border border-red-500 px-3 py-2 text-red-700">Delete</button></div>
@@ -121,6 +124,7 @@ export function SavedProductEditor({ initialProduct }: { initialProduct: SavedPr
     </div>}
 
     {preview && savedResult ? <section className="mt-6 rounded-lg border border-emerald-700 bg-slate-900 p-4"><h2 className="text-xl font-semibold">Recalculation preview</h2><p className="mt-1 text-sm text-slate-300">The saved record is unchanged until you explicitly save this preview.</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><Comparison label="Recommended price" oldValue={currency(savedResult.recommendedPrice)} newValue={currency(preview.data.result.recommendedPrice)} /><Comparison label="Net business profit" oldValue={currency(savedResult.netProfit)} newValue={currency(preview.data.result.netProfit)} /><Comparison label="Profit margin" oldValue={percent(savedResult.profitMarginPercentage)} newValue={percent(preview.data.result.profitMarginPercentage)} /><Comparison label="Formula version" oldValue={product.formulaVersion} newValue={preview.formulaVersion} /></div><div className="mt-5 flex gap-2"><button disabled={pending} onClick={savePreview} className="rounded bg-emerald-500 px-3 py-2 font-semibold text-slate-950">Save updated calculation</button><button disabled={pending} onClick={() => setPreview(null)} className="rounded border border-slate-600 px-3 py-2">Cancel</button></div></section> : null}
+    {input ? <ProductProfileEditor product={product} onSaved={setProduct} onDirtyChange={setProfileDirty} /> : null}
   </>;
 }
 
