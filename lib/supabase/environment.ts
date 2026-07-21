@@ -8,8 +8,16 @@ type SupabasePublicEnvironment = {
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?: string;
 };
 
+function readBundledPublicEnvironment(): SupabasePublicEnvironment {
+  return {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  };
+}
+
 export function getSupabasePublicConfig(
-  environment: SupabasePublicEnvironment = process.env as unknown as SupabasePublicEnvironment
+  environment: SupabasePublicEnvironment = readBundledPublicEnvironment()
 ): SupabasePublicConfig | null {
   const url = environment.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const publishableKey = environment.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
