@@ -15,6 +15,7 @@
     "supabase:env": "node scripts/setup-supabase-env.mjs",
     "test:db": "supabase test db supabase/tests/database --local",
     "test:auth": "node scripts/test-local-auth.mjs",
+    "test:products": "node scripts/test-local-products.mjs",
     "test:unit": "vitest run",
     "test:all": "npm test && npm run test:db && npm run test:auth"
   },
@@ -23,7 +24,8 @@
     "@supabase/supabase-js": "^2.110.7",
     "next": "16.2.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

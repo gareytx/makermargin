@@ -1,7 +1,8 @@
 import type { PricingInput } from "./calculations";
 import type { ProductPresetId } from "./product-presets";
-import type { PendingSaveDraft, PricingInputSnapshot } from "./saved-products";
+import type { PendingSaveDraft } from "./saved-products";
 import { safeDraftId } from "./auth-navigation";
+import { parsePricingInputSnapshot, serializePricingInputSnapshot } from "./saved-product-snapshots";
 
 const PREFIX = "makermargin:pending-save:v1:";
 const LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -20,37 +21,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isPricingInput(value: unknown): value is PricingInput {
-  if (!isRecord(value) || typeof value.productName !== "string" || typeof value.customerPaysShipping !== "boolean") return false;
-  const numericFields = [
-    "materialCost", "packagingCost", "otherCost", "wastePercentage",
-    "machineMinutes", "machineHourlyRate", "laborMinutes", "laborHourlyRate",
-    "marketplaceFeePercentage", "processingFeePercentage", "fixedTransactionFee",
-    "shippingCost", "desiredMarginPercentage",
-  ];
-  return numericFields.every((field) => typeof value[field] === "number" && Number.isFinite(value[field]));
-}
-
-function isPricingInputSnapshot(value: unknown): value is PricingInputSnapshot {
-  return (
-    isRecord(value) &&
-    value.schemaVersion === "pricing-input-v1" &&
-    value.basis === "per_sellable_product" &&
-    isPricingInput(value.data)
-  );
-}
-
 export function validatePendingSaveDraft(value: unknown, now = Date.now()): PendingSaveDraft | null {
   if (!isRecord(value) || value.version !== 1 || safeDraftId(value.id as string) !== value.id) return null;
   if (typeof value.createdAt !== "string" || typeof value.expiresAt !== "string") return null;
-  if (value.intendedAction !== "save-product" || !isPricingInputSnapshot(value.pricingInputs)) return null;
+  const pricingInputs = parsePricingInputSnapshot(value.pricingInputs);
+  if (value.intendedAction !== "save-product" || !pricingInputs) return null;
   if (typeof value.intendedProductName !== "string" || value.returnPath !== "/") return null;
   if (value.sourcePresetId !== null && typeof value.sourcePresetId !== "string") return null;
   const created = Date.parse(value.createdAt);
   const expires = Date.parse(value.expiresAt);
   if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= now) return null;
   if (expires - created !== LIFETIME_MS) return null;
-  return value as PendingSaveDraft;
+  return structuredClone({ ...value, pricingInputs }) as PendingSaveDraft;
 }
 
 export function createPendingSaveDraft(
@@ -66,11 +48,7 @@ export function createPendingSaveDraft(
     id: crypto.randomUUID(),
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + LIFETIME_MS).toISOString(),
-    pricingInputs: {
-      schemaVersion: "pricing-input-v1",
-      basis: "per_sellable_product",
-      data: structuredClone(pricingInputs),
-    },
+    pricingInputs: serializePricingInputSnapshot(pricingInputs),
     sourcePresetId,
     intendedProductName: pricingInputs.productName,
     returnPath: "/",
