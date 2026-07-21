@@ -88,6 +88,26 @@ Run the real local email-confirmation, login, and password-recovery flow:
 npm run test:auth
 ```
 
+Run the saved-product integration suite against the local stack:
+
+```bash
+npm run test:products
+```
+
+Saved products contain versioned, per-sellable-product copies of both the
+calculator inputs and calculated results. Preset-derived saves retain the
+historical preset ID, but their values are independent snapshots rather than a
+live link to the preset. Historical records are never silently recalculated
+when formulas or presets change. On a product detail page, recalculation first
+shows a non-destructive comparison and updates the record only after the user
+chooses **Save updated calculation**.
+
+Anonymous visitors can continue using the calculator. Choosing **Save** stores
+an opaque, short-lived pending draft in that browser and sends only its ID
+through authentication. After sign-in, the calculator asks before restoring
+the draft; a successful product save consumes it, while a failed save leaves it
+available for another attempt.
+
 The authentication test creates its own temporary user, reads confirmation
 and recovery messages from Mailpit at
 [http://127.0.0.1:54324](http://127.0.0.1:54324), and removes the user when it
@@ -113,7 +133,9 @@ database work.
 The anonymous pricing calculator remains available and buildable when the
 public Supabase variables are absent. Auth pages show an unavailable state in
 that configuration. Never expose a service-role key or other privileged secret
-through a `NEXT_PUBLIC_` variable or browser module.
+through a `NEXT_PUBLIC_` variable or browser module. Saved-product application
+code uses the signed-in user's server session and database Row Level Security;
+the service-role key must never be used in client-side code.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

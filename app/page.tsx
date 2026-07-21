@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   calculatePricing,
   calculateViability,
@@ -15,15 +15,49 @@ import {
   type CalculatorStartingPoint,
   type CalculatorStartingPointId,
 } from "@/lib/product-presets";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { createPendingSaveDraft, deletePendingSaveDraft, getPendingSaveDraft } from "@/lib/pending-save-drafts";
+import type { PendingSaveDraft } from "@/lib/saved-products";
+import { withAuthContext } from "@/lib/auth-navigation";
+import { createSavedProductAction } from "@/lib/saved-product-actions";
+import { SiteNav } from "./site-nav";
+import { navigateBrowser } from "@/lib/browser-navigation";
 
 const initialPreset = getCalculatorStartingPoint("slate-coasters");
 
 export default function Home() {
+  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [selectedPresetId, setSelectedPresetId] =
     useState<CalculatorStartingPointId>(initialPreset.id);
   const [input, setInput] = useState<PricingInput>({ ...initialPreset.values });
   const [presetModified, setPresetModified] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState(initialPreset.values.productName);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authReady, setAuthReady] = useState(!supabase);
+  const [pendingDraft, setPendingDraft] = useState<PendingSaveDraft | null>(null);
+  const [consumedDraftId, setConsumedDraftId] = useState<string | null>(null);
+  const saveNameRef = useRef<HTMLInputElement>(null);
   const selectedPreset = getCalculatorStartingPoint(selectedPresetId);
+
+  useEffect(() => {
+    if (!supabase) return;
+    void supabase.auth.getSession().then(({ data }) => {
+      setAuthenticated(Boolean(data.session));
+      setAuthReady(true);
+    });
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => setAuthenticated(Boolean(session)));
+    return () => data.subscription.unsubscribe();
+  }, [supabase]);
+
+  useEffect(() => {
+    const id = new URL(window.location.href).searchParams.get("draft");
+    if (id) queueMicrotask(() => setPendingDraft(getPendingSaveDraft(id)));
+  }, []);
+
+  useEffect(() => { if (saveOpen) saveNameRef.current?.focus(); }, [saveOpen]);
 
   const calculation = useMemo(() => calculatePricing(input), [input]);
 
@@ -77,9 +111,78 @@ export default function Home() {
     setPresetModified(false);
   }
 
+  function startSave() {
+    setSaveMessage("");
+    if (!calculation.valid) {
+      setSaveMessage("Correct the pricing errors before saving.");
+      return;
+    }
+    if (!supabase) {
+      setSaveMessage("Cloud saving is unavailable. The calculator remains fully usable.");
+      return;
+    }
+    if (!authReady) return;
+    if (!authenticated) {
+      const draft = createPendingSaveDraft(
+        input,
+        selectedPresetId === "custom" ? null : selectedPresetId
+      );
+      if (!draft) {
+        setSaveMessage("This browser could not preserve the pending product. Your calculator values are unchanged.");
+        return;
+      }
+      navigateBrowser(withAuthContext("/login", "/", draft.id));
+      return;
+    }
+    setSaveName(input.productName);
+    setSaveOpen(true);
+  }
+
+  function clearDraftUrl() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("draft");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function restorePendingDraft() {
+    if (!pendingDraft) return;
+    setInput(structuredClone(pendingDraft.pricingInputs.data));
+    const source = pendingDraft.sourcePresetId;
+    setSelectedPresetId(productPresets.some((preset) => preset.id === source)
+      ? source as CalculatorStartingPointId : "custom");
+    setPresetModified(true);
+    setSaveName(pendingDraft.intendedProductName);
+    setConsumedDraftId(pendingDraft.id);
+    setPendingDraft(null);
+    clearDraftUrl();
+    setSaveOpen(true);
+  }
+
+  function discardPendingDraft() {
+    if (pendingDraft) deletePendingSaveDraft(pendingDraft.id);
+    setPendingDraft(null);
+    clearDraftUrl();
+  }
+
+  async function submitSave(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setSaveMessage("");
+    const result = await createSavedProductAction({
+      name: saveName,
+      pricingInput: input,
+      sourcePresetId: selectedPresetId === "custom" ? null : selectedPresetId,
+    });
+    setSaving(false);
+    if (!result.ok) { setSaveMessage(result.error); return; }
+    if (consumedDraftId) deletePendingSaveDraft(consumedDraftId);
+    navigateBrowser(`/products/${result.data.id}`);
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-white sm:px-6 sm:py-10">
       <div className="mx-auto max-w-6xl">
+        <SiteNav />
         <section className="mb-10">
           <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-emerald-400">
             MakerMargin Prototype
@@ -101,6 +204,17 @@ export default function Home() {
             <h2 className="mb-5 text-2xl font-semibold">
               Product Calculator
             </h2>
+
+            {pendingDraft ? (
+              <div className="mb-5 rounded-lg border border-emerald-700 bg-emerald-950/50 p-4" role="status">
+                <p className="font-semibold">Resume saving this product?</p>
+                <p className="mt-1 text-sm text-slate-300">Your current calculator values will remain unchanged until you restore the pending draft.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" onClick={restorePendingDraft} className="rounded bg-emerald-400 px-3 py-2 font-semibold text-slate-950">Restore draft</button>
+                  <button type="button" onClick={discardPendingDraft} className="rounded border border-slate-600 px-3 py-2">Discard</button>
+                </div>
+              </div>
+            ) : null}
 
             <div className="mb-6 border-b border-slate-700 pb-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -391,11 +505,36 @@ export default function Home() {
                     )}/hr`}
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={startSave}
+                  disabled={!authReady}
+                  className="mt-6 w-full rounded-lg bg-emerald-500 px-4 py-3 font-bold text-slate-950 disabled:opacity-60"
+                >Save product</button>
               </>
             ) : null}
+            {saveMessage && !saveOpen ? <p role="alert" className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{saveMessage}</p> : null}
           </section>
         </div>
       </div>
+
+      {saveOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="save-title" className="w-full max-w-md rounded-lg bg-white p-5 text-slate-950 shadow-2xl">
+            <h2 id="save-title" className="text-xl font-bold">Save product</h2>
+            <form className="mt-4" onSubmit={submitSave}>
+              <label className="block text-sm font-medium">Product name
+                <input ref={saveNameRef} value={saveName} onChange={(event) => setSaveName(event.target.value)} maxLength={120} required className="mt-2 w-full rounded border border-slate-400 px-3 py-2" />
+              </label>
+              {saveMessage ? <p role="alert" className="mt-3 text-sm text-red-700">{saveMessage}</p> : null}
+              <div className="mt-5 flex justify-end gap-2">
+                <button type="button" onClick={() => setSaveOpen(false)} className="rounded border border-slate-400 px-3 py-2">Cancel</button>
+                <button disabled={saving} className="rounded bg-emerald-600 px-3 py-2 font-semibold text-white disabled:opacity-60">{saving ? "Saving..." : "Save"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
