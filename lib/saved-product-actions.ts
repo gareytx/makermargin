@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { PricingInput } from "./calculations";
+import type { CashProfileV1, ProductionProfileV1 } from "./product-profiles";
 import {
   createSavedProduct,
   deleteSavedProduct,
@@ -11,6 +12,7 @@ import {
   saveRecalculatedProduct,
   SavedProductError,
   updateSavedProduct,
+  updateSavedProductProfiles,
 } from "./saved-product-service";
 import type { SavedProduct } from "./saved-products";
 
@@ -49,6 +51,15 @@ export async function updateSavedProductAction(id: string, name: string, pricing
 
 export async function renameSavedProductAction(id: string, name: string) {
   const result = await run(() => renameSavedProduct(id, name));
+  if (result.ok) refresh(id);
+  return result;
+}
+
+export async function updateSavedProductProfilesAction(id: string, profiles: {
+  productionProfile?: ProductionProfileV1;
+  cashProfile?: CashProfileV1;
+}) {
+  const result = await run(() => updateSavedProductProfiles(id, profiles));
   if (result.ok) refresh(id);
   return result;
 }

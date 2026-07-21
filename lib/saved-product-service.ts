@@ -7,10 +7,17 @@ import { createServerSupabaseClient } from "./supabase/server";
 import type { SavedProduct } from "./saved-products";
 import { duplicateProductName, safeProductId } from "./saved-product-validation";
 import {
+  validateCashProfile,
+  validateProductionProfile,
+  type CashProfileV1,
+  type ProductionProfileV1,
+} from "./product-profiles";
+import {
   createCurrentSnapshots,
   CURRENT_FORMULA_VERSION,
   parseCalculationSnapshot,
   parsePricingInputSnapshot,
+  serializePricingInputSnapshot,
 } from "./saved-product-snapshots";
 
 type Row = Database["public"]["Tables"]["saved_products"]["Row"];
@@ -109,15 +116,49 @@ export async function createSavedProduct(input: {
 }
 
 export async function updateSavedProduct(id: string, input: { name: string; pricingInput: PricingInput }) {
+  const original = await getSavedProduct(id);
   const { supabase } = await context();
   let snapshots;
-  try { snapshots = createCurrentSnapshots(input.pricingInput); }
+  const profiles = original.pricingInputs?.schemaVersion === "pricing-input-v2"
+    ? { productionProfile: original.pricingInputs.productionProfile, cashProfile: original.pricingInputs.cashProfile }
+    : {};
+  try { snapshots = createCurrentSnapshots(input.pricingInput, undefined, profiles); }
   catch (error) { throw new SavedProductError("validation", error instanceof Error ? error.message : "Pricing inputs are invalid."); }
   const { data, error } = await supabase.from("saved_products").update({
     name: validName(input.name),
     pricing_inputs: snapshots.pricingInputs as unknown as Json,
     calculation_snapshot: snapshots.calculationSnapshot as unknown as Json,
     formula_version: snapshots.formulaVersion,
+  }).eq("id", validId(id)).select("*").maybeSingle();
+  if (error) throw databaseFailure();
+  if (!data) throw new SavedProductError("not-found", "Saved product was not found.");
+  return parseRow(data);
+}
+
+export async function updateSavedProductProfiles(id: string, profiles: {
+  productionProfile?: ProductionProfileV1;
+  cashProfile?: CashProfileV1;
+}) {
+  const product = await getSavedProduct(id);
+  if (!product.pricingInputs) throw new SavedProductError("snapshot", "This historical input version cannot be updated.");
+  if (profiles.productionProfile) {
+    const validation = validateProductionProfile(profiles.productionProfile);
+    if (!validation.valid) throw new SavedProductError("validation", validation.errors.join(" "));
+  }
+  if (profiles.cashProfile) {
+    const validation = validateCashProfile(profiles.cashProfile);
+    if (!validation.valid) throw new SavedProductError("validation", validation.errors.join(" "));
+  }
+  const existingMachineKey = product.pricingInputs.schemaVersion === "pricing-input-v2"
+    ? product.pricingInputs.productionProfile?.primaryMachine?.key
+    : undefined;
+  const productionProfile = profiles.productionProfile?.primaryMachine && existingMachineKey
+    ? { ...profiles.productionProfile, primaryMachine: { ...profiles.productionProfile.primaryMachine, key: existingMachineKey } }
+    : profiles.productionProfile;
+  const pricingInputs = serializePricingInputSnapshot(product.pricingInputs.data, { ...profiles, productionProfile });
+  const { supabase } = await context();
+  const { data, error } = await supabase.from("saved_products").update({
+    pricing_inputs: pricingInputs as unknown as Json,
   }).eq("id", validId(id)).select("*").maybeSingle();
   if (error) throw databaseFailure();
   if (!data) throw new SavedProductError("not-found", "Saved product was not found.");
@@ -161,7 +202,10 @@ export async function previewSavedProductRecalculation(id: string) {
   if (!product.pricingInputs) {
     throw new SavedProductError("snapshot", "This historical input version cannot be recalculated.");
   }
-  return { product, preview: createCurrentSnapshots(product.pricingInputs.data) };
+  const profiles = product.pricingInputs.schemaVersion === "pricing-input-v2"
+    ? { productionProfile: product.pricingInputs.productionProfile, cashProfile: product.pricingInputs.cashProfile }
+    : {};
+  return { product, preview: createCurrentSnapshots(product.pricingInputs.data, undefined, profiles) };
 }
 
 export async function saveRecalculatedProduct(id: string) {
