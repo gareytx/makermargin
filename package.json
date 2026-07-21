@@ -12,9 +12,15 @@
     "supabase:stop": "supabase stop",
     "supabase:reset": "supabase db reset",
     "supabase:types": "supabase gen types typescript --local | node -e \"let data = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (chunk) => data += chunk); process.stdin.on('end', () => process.stdout.write(data.trimEnd() + '\\n'));\" > lib/supabase/database.types.ts",
-    "test:db": "supabase test db supabase/tests/database --local"
+    "supabase:env": "node scripts/setup-supabase-env.mjs",
+    "test:db": "supabase test db supabase/tests/database --local",
+    "test:auth": "node scripts/test-local-auth.mjs",
+    "test:unit": "vitest run",
+    "test:all": "npm test && npm run test:db && npm run test:auth"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.3",
+    "@supabase/supabase-js": "^2.110.7",
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4"

@@ -53,6 +53,17 @@ Start the local services:
 npm run supabase:start
 ```
 
+Create an ignored `.env.local` containing only the local API URL and
+low-privilege publishable/anonymous key:
+
+```bash
+npm run supabase:env
+```
+
+The script reads runtime CLI status, maps `API_URL` and `ANON_KEY` to
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and
+never writes the service-role key, JWT secret, or database credentials.
+
 Rebuild the local database from committed migrations:
 
 ```bash
@@ -71,6 +82,21 @@ Run the PostgreSQL constraint and Row Level Security tests:
 npm run test:db
 ```
 
+Run the real local email-confirmation, login, and password-recovery flow:
+
+```bash
+npm run test:auth
+```
+
+The authentication test creates its own temporary user, reads confirmation
+and recovery messages from Mailpit at
+[http://127.0.0.1:54324](http://127.0.0.1:54324), and removes the user when it
+finishes. Mailpit captures local messages; it does not deliver real email.
+
+To test manually, register in the app, open the confirmation message in
+Mailpit, and follow its callback link. Password recovery uses the same local
+inbox and returns through `/auth/callback` to `/update-password`.
+
 Stop local services when they are no longer needed:
 
 ```bash
@@ -83,6 +109,11 @@ credentials, signing keys, database dumps, and service-role secrets must never
 be committed. Local CLI output may display development-only keys; do not copy
 them into source files. No hosted Supabase credentials are required for local
 database work.
+
+The anonymous pricing calculator remains available and buildable when the
+public Supabase variables are absent. Auth pages show an unavailable state in
+that configuration. Never expose a service-role key or other privileged secret
+through a `NEXT_PUBLIC_` variable or browser module.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

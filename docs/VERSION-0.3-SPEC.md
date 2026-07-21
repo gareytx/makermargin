@@ -211,6 +211,7 @@ export type PendingSaveDraft = {
   sourcePresetId: ProductPresetId | null;
   intendedProductName: string;
   returnPath: "/";
+  intendedAction: "save-product";
 };
 
 export type RecalculationPreview = {
