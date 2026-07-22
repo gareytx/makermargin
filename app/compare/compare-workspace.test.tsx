@@ -17,6 +17,7 @@ function saved(id: string, name: string, options: { profile?: boolean; productio
     } } : {}),
     ...(includeCash ? { cashProfile: { schemaVersion: CASH_PROFILE_VERSION, cashCostPerSale: 8, upfrontCashCostPerUnit: 3, fixedUpfrontCashCostPerBatch: 4, ...(options.launch === false ? {} : { fixedProductLaunchCost: 50 }) } } : {}),
   });
+  snapshots.pricingInputs.data.laborMinutes = 5;
   const pricingInputs = options.historical ? { schemaVersion: PRICING_INPUT_SNAPSHOT_VERSION_V1, basis: snapshots.pricingInputs.basis, data: snapshots.pricingInputs.data } as const : snapshots.pricingInputs;
   return { id, userId: "owner", name, sourcePresetId: null, pricingInputs, calculationSnapshot: snapshots.calculationSnapshot, formulaVersion: snapshots.formulaVersion, rawPricingInputs: pricingInputs as never, rawCalculationSnapshot: snapshots.calculationSnapshot as never, createdAt: "2026-07-20T00:00:00Z", updatedAt: "2026-07-22T00:00:00Z" };
 }
@@ -24,6 +25,11 @@ function saved(id: string, name: string, options: { profile?: boolean; productio
 const products = [saved("a", "Slate Coasters", { profile: true }), saved("b", "Leather Journal", { profile: true }), saved("c", "Digital Print", { historical: true })];
 
 function select(name: string) { fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(name) })); }
+function runComparisonFor(items: SavedProduct[]) {
+  render(<CompareWorkspace initialProducts={items} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+  fireEvent.click(screen.getByRole("button", { name: "Compare selected products" }));
+}
 
 describe("CompareWorkspace selection and empty states", () => {
   it("links zero-product users to the calculator", () => {
@@ -144,6 +150,31 @@ describe("CompareWorkspace results", () => {
     expect(screen.queryByText(/overall winner|best overall/i)).toBeNull();
   });
 
+  it("shows labor mismatch warnings and suppresses conflicting owner-benefit efficiency", () => {
+    const mismatch = saved("mismatch", "Mismatch", { profile: true });
+    if (mismatch.pricingInputs) mismatch.pricingInputs.data.laborMinutes = 1.2;
+    runComparisonFor([mismatch, saved("match", "Match", { profile: true })]);
+    expect(screen.getByText(/pricing calculator compensates 1.2 minutes/)).toBeTruthy();
+    const row = screen.getByRole("rowheader", { name: "Owner economic benefit per hands-on owner labor hour" }).closest("tr")!;
+    expect(within(row).getByText("Unavailable")).toBeTruthy();
+  });
+
+  it("shows impossible stored elapsed time as unavailable with a warning", () => {
+    const impossible = saved("bad-elapsed", "Bad Elapsed", { profile: true });
+    if (impossible.pricingInputs?.schemaVersion === "pricing-input-v2" && impossible.pricingInputs.productionProfile) impossible.pricingInputs.productionProfile.totalElapsedMinutesPerBatch = 10;
+    runComparisonFor([impossible, saved("good", "Good", { profile: true })]);
+    expect(screen.getByText(/shorter than its 20-minute occupied primary-machine run/)).toBeTruthy();
+    const row = screen.getByRole("rowheader", { name: "Explicit elapsed time per representative batch" }).closest("tr")!;
+    expect(within(row).getByText("Unavailable")).toBeTruthy();
+  });
+
+  it("explains explicit zero launch cost instead of displaying zero units", () => {
+    const zeroLaunch = saved("zero-launch", "Zero Launch", { profile: true });
+    if (zeroLaunch.pricingInputs?.schemaVersion === "pricing-input-v2" && zeroLaunch.pricingInputs.cashProfile) zeroLaunch.pricingInputs.cashProfile.fixedProductLaunchCost = 0;
+    runComparisonFor([zeroLaunch, saved("other", "Other", { profile: true })]);
+    expect(screen.getByText("Immediate - no fixed launch cost to recover")).toBeTruthy();
+  });
+
   it("keeps capacity results hidden until a supplied limit is explicitly compared", () => {
     render(<CompareWorkspace initialProducts={products.slice(0, 2)} />);
     fireEvent.click(screen.getByRole("button", { name: "Select all" })); fireEvent.click(screen.getByRole("button", { name: "Compare selected products" }));
@@ -152,14 +183,14 @@ describe("CompareWorkspace results", () => {
     fireEvent.change(screen.getByLabelText("Working-capital ceiling ($)"), { target: { value: "10" } });
     fireEvent.click(screen.getByRole("button", { name: "Update comparison" }));
     expect(screen.getByRole("heading", { name: "Capacity and bottlenecks" })).toBeTruthy();
-    expect(screen.getAllByText("Exceeds the supplied limit").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Primary bottleneck/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0 complete batches/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Limiting resource/).length).toBeGreaterThan(0);
   });
 
   it("keeps historical products selectable and links missing guidance to profile details", () => {
     render(<CompareWorkspace initialProducts={[products[0], products[2]]} />);
     fireEvent.click(screen.getByRole("button", { name: "Select all" })); fireEvent.click(screen.getByRole("button", { name: "Compare selected products" }));
-    expect(screen.getByText("Historical compatibility")).toBeTruthy();
+    expect(screen.getByText("Compatibility and data-quality warnings")).toBeTruthy();
     const links = screen.getAllByRole("link", { name: "Add comparison details" });
     expect(links.some((link) => link.getAttribute("href") === "/products/c#production-cash-profile")).toBe(true);
   });
@@ -196,7 +227,7 @@ describe("CompareWorkspace profile-sparse polish", () => {
 
   it("keeps a row visible when at least one product has a value", () => {
     run([saved("p", "Profiled", { profile: true }), historical[0]]);
-    const row = screen.getByRole("rowheader", { name: "Active labor per sellable product" }).closest("tr")!;
+    const row = screen.getByRole("rowheader", { name: "Total hands-on owner labor per sellable product" }).closest("tr")!;
     expect(within(row).getByText("5 min")).toBeTruthy();
     expect(within(row).getByText("Unavailable")).toBeTruthy();
   });
@@ -206,7 +237,7 @@ describe("CompareWorkspace profile-sparse polish", () => {
     const moreData = screen.getByText(/More data needed for 4 leader categories/);
     fireEvent.click(moreData);
     fireEvent.click(screen.getByText("Review 4 unavailable batch measures"));
-    expect(document.body.textContent).toContain("owner benefit per active labor hour");
+    expect(document.body.textContent).toContain("owner benefit per hands-on owner labor hour");
     expect(document.body.textContent).not.toMatch(/ownerEconomicBenefitPerLaborHour|netBusinessProfitPerBatch|upfrontCashRequiredPerBatch/);
   });
 
@@ -236,7 +267,7 @@ describe("CompareWorkspace profile-sparse polish", () => {
     fireEvent.change(screen.getByLabelText("Available owner labor hours"), { target: { value: "0.1" } });
     fireEvent.change(screen.getByLabelText("Working-capital ceiling ($)"), { target: { value: "10" } });
     fireEvent.click(screen.getByRole("button", { name: "Compare selected products" }));
-    expect(screen.getAllByText("Exceeds the supplied limit").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0 complete batches/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Other capacity data unavailable")).toHaveLength(2);
     fireEvent.click(screen.getAllByText("Other capacity data unavailable")[0]);
     expect(screen.getAllByText("Working-capital utilization requires both upfront cash information and a representative batch size.")).toHaveLength(2);
@@ -249,7 +280,7 @@ describe("CompareWorkspace profile-sparse polish", () => {
     ];
     run(tailored);
     const guidance = screen.getByRole("heading", { name: "Improve this comparison" }).parentElement!;
-    expect(guidance.textContent).toContain("Add production details to compare active labor, machine efficiency, and batch economics.");
+    expect(guidance.textContent).toContain("Add production details to compare hands-on owner labor, machine efficiency, and batch economics.");
     expect(guidance.textContent).toContain("Add cash details to compare upfront cash requirements and break-even units.");
     expect(guidance.textContent).toContain("Add observed elapsed batch time to compare total production duration.");
     expect(guidance.textContent).toContain("Add an assigned product-launch cost to calculate break-even units.");

@@ -230,7 +230,8 @@ export function buildProfileAssistantProposal(
     if (!validNonnegative(answers.totalElapsedMinutesPerBatch)) errors.push("Observed elapsed time must be nonnegative.");
     else {
       proposals.push(proposal(context, "totalElapsedMinutesPerBatch", answers.totalElapsedMinutesPerBatch, "user-entered", "Observed wall-clock time entered by you; not calculated from component times."));
-      if ((occupied !== undefined && answers.totalElapsedMinutesPerBatch < occupied) || (supervised !== undefined && answers.totalElapsedMinutesPerBatch < supervised)) warnings.push("Observed elapsed time is shorter than a confirmed machine duration. Review the values before applying them.");
+      if (occupied !== undefined && answers.totalElapsedMinutesPerBatch < occupied) errors.push("Observed elapsed wall-clock time cannot be shorter than confirmed occupied primary-machine time.");
+      else if (supervised !== undefined && answers.totalElapsedMinutesPerBatch < supervised) errors.push("Observed elapsed wall-clock time cannot be shorter than confirmed supervised machine time.");
     }
   }
 

@@ -26,7 +26,7 @@ function continueStep() {
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 }
 
-function reachReview() {
+function reachFixedCosts() {
   start();
   fireEvent.change(screen.getByLabelText(/How many sellable products/), { target: { value: "10" } });
   continueStep();
@@ -41,6 +41,10 @@ function reachReview() {
   continueStep();
   for (const select of screen.getAllByRole("combobox")) fireEvent.change(select, { target: { value: "not-cash" } });
   continueStep();
+}
+
+function reachReview() {
+  reachFixedCosts();
   fireEvent.click(screen.getAllByLabelText("No")[0]);
   fireEvent.click(screen.getAllByLabelText("No")[1]);
   fireEvent.click(screen.getByRole("button", { name: "Review suggestions" }));
@@ -86,5 +90,32 @@ describe("profile assistant interface", () => {
     expect(onApply).toHaveBeenCalledOnce();
     expect(onApply.mock.calls[0][0]).toMatchObject({ unitsPerBatch: "10", activeLaborMinutesPerUnit: "99" });
     expect(screen.getByRole("status").textContent).toContain("not been saved yet");
+  });
+
+  it("blocks review immediately when Yes has no fixed-cost amount", () => {
+    render(<ProfileAssistant context={context} form={blankForm} onApply={vi.fn()} />);
+    reachFixedCosts();
+    fireEvent.click(screen.getAllByLabelText("Yes")[0]);
+    expect(screen.getByRole("alert").textContent).toContain("fixed batch amount");
+    expect((screen.getByRole("button", { name: "Review suggestions" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Fixed upfront cash per batch ($)"), { target: { value: "0" } });
+    expect((screen.getByRole("button", { name: "Review suggestions" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("shows an inline blocking error when elapsed time is shorter than machine time", () => {
+    render(<ProfileAssistant context={context} form={blankForm} onApply={vi.fn()} />);
+    start();
+    fireEvent.change(screen.getByLabelText(/How many sellable products/), { target: { value: "1" } });
+    continueStep();
+    fireEvent.click(screen.getByLabelText("Yes"));
+    fireEvent.change(screen.getByLabelText("Primary machine name"), { target: { value: "Laser" } });
+    fireEvent.click(screen.getByLabelText("A different batch time"));
+    fireEvent.change(screen.getByLabelText("Actual occupied machine minutes per representative batch"), { target: { value: "20" } });
+    fireEvent.click(screen.getByLabelText("No hands-on supervision"));
+    continueStep();
+    fireEvent.click(screen.getByLabelText(/enter production labor directly/));
+    continueStep();
+    fireEvent.change(screen.getByLabelText("Observed total elapsed time per batch (minutes)"), { target: { value: "1" } });
+    expect(screen.getByRole("alert").textContent).toContain("cannot be shorter than confirmed occupied primary-machine time");
   });
 });
