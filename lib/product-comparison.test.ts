@@ -149,6 +149,29 @@ describe("comparison-v1 core and profile metrics", () => {
     expect(metrics.totalElapsedMinutesPerBatch).toMatchObject({ status: "available", value: 75 });
   });
 
+  it("gives complete machine-free products labor metrics but no machine rankings", () => {
+    const machineFree = production({ primaryMachine: undefined });
+    const result = compare([
+      product("a", "Machine Free A", { production: machineFree }),
+      product("b", "Machine Free B", { production: { ...machineFree, activeLaborMinutesPerUnit: 5 } }),
+    ], undefined);
+    expect(result.products[0].metrics.activeLaborMinutesPerBatch.status).toBe("available");
+    expect(result.products[0].metrics.businessProfitPerLaborHour.status).toBe("available");
+    expect(result.products[0].metrics.occupiedMachineMinutesPerSellableProduct.status).toBe("unavailable");
+    expect(result.categoryLeaders.highestBusinessProfitPerMachineHour.status).toBe("unavailable");
+  });
+
+  it("keeps machine labor unavailable until supervision is explicitly confirmed", () => {
+    const missingSupervision = production({
+      primaryMachine: { key: "laser-a", label: "Laser A", occupiedMinutesPerBatch: 40 },
+    });
+    const result = compare([
+      product("a", "Incomplete Machine", { production: missingSupervision }),
+      product("b", "Complete Machine", { production: production() }),
+    ], undefined);
+    expect(result.products[0].metrics.activeLaborMinutesPerBatch).toMatchObject({ status: "unavailable", reason: { code: "missing_active_labor" } });
+  });
+
   it("never derives elapsed time by summing component durations", () => {
     const profile = production();
     delete profile.totalElapsedMinutesPerBatch;
