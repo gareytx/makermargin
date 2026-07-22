@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatComparisonValue, formatMetric, formatMinutes, utilizationLabel } from "./comparison-formatting";
+import { comparisonMetricLabels, formatComparisonValue, formatMetric, formatMinutes, utilizationLabel } from "./comparison-formatting";
 
 describe("comparison presentation formatting", () => {
   it("formats currencies, percentages, rates, units, and utilization without false precision", () => {
@@ -22,5 +22,11 @@ describe("comparison presentation formatting", () => {
     expect(utilizationLabel(0.5)).toBe("Within the supplied limit");
     expect(utilizationLabel(0.85)).toBe("Near the supplied limit");
     expect(utilizationLabel(1.04)).toBe("Exceeds the supplied limit");
+  });
+
+  it("provides readable labels for every comparison metric", () => {
+    expect(Object.keys(comparisonMetricLabels)).toHaveLength(22);
+    expect(comparisonMetricLabels.ownerEconomicBenefitPerLaborHour).toBe("owner benefit per active labor hour");
+    expect(Object.values(comparisonMetricLabels).join(" ")).not.toMatch(/[a-z][A-Z]/);
   });
 });
