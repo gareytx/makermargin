@@ -32,6 +32,7 @@ function product(
     cash?: PricingInputSnapshotV2["cashProfile"];
     v1?: boolean;
     sourcePresetId?: string | null;
+    pricingLaborMinutes?: number;
   } = {}
 ): SavedProduct {
   const pair = createCurrentSnapshots(customProductTemplate.values, generatedAt, {
@@ -43,6 +44,7 @@ function product(
   pair.calculationSnapshot.data.result.laborCost = options.laborCost ?? 10;
   pair.calculationSnapshot.data.result.machineCost = options.machineCost ?? 4;
   pair.calculationSnapshot.data.result.recommendedPrice = options.price ?? 50;
+  pair.pricingInputs.data.laborMinutes = options.pricingLaborMinutes ?? 8;
   const pricingInputs = options.v1 ? {
     schemaVersion: PRICING_INPUT_SNAPSHOT_VERSION_V1,
     basis: pair.pricingInputs.basis,
@@ -148,7 +150,6 @@ describe("comparison-v1 core and profile metrics", () => {
     expect(metrics.occupiedMachineMinutesPerSellableProduct).toMatchObject({ status: "available", value: 10 });
     expect(metrics.totalElapsedMinutesPerBatch).toMatchObject({ status: "available", value: 75 });
   });
-
   it("gives complete machine-free products labor metrics but no machine rankings", () => {
     const machineFree = production({ primaryMachine: undefined });
     const result = compare([
@@ -304,20 +305,64 @@ describe("runtime bottlenecks and explanations", () => {
   it("preserves exact ties and resources within five percentage points as near ties", () => {
     expect(BOTTLENECK_NEAR_TIE_TOLERANCE).toBe(0.05);
     const bottleneck = compare(undefined, { availableLaborMinutes: 64, availableMachineMinutesByKey: { "laser-a": 80 }, workingCapitalCeiling: 26 / 0.47 }).bottlenecksByProduct.a;
-    expect(bottleneck.primaryResources).toEqual(["labor", "machine"]);
-    expect(bottleneck.nearTiedResources).toEqual(["labor", "machine", "working_capital"]);
+    expect(bottleneck.primaryResources).toEqual(["labor", "machine", "working_capital"]);
+    expect(bottleneck.nearTiedResources).toEqual(["labor", "machine"]);
   });
 
   it("reports missing capacity and unmatched machine keys explicitly", () => {
     const result = compare(undefined, { availableLaborMinutes: 80, availableMachineMinutesByKey: { other: 100 } }).bottlenecksByProduct.a;
     expect(result.utilizations.machine).toMatchObject({ status: "unavailable", reason: { code: "machine_capacity_not_found" } });
-    expect(result.status).toBe("unavailable");
+    expect(result.status).toBe("available");
+    expect(result.capacities.machine).toMatchObject({ status: "unavailable", reason: { code: "machine_capacity_not_found" } });
   });
 
-  it("requires at least two valid resources and does not infer from magnitude", () => {
+  it("identifies the only available positive resource without inventing missing capacity", () => {
     const result = compare(undefined, { availableLaborMinutes: 1 }).bottlenecksByProduct.a;
-    expect(result.status).toBe("unavailable");
+    expect(result.status).toBe("available");
+    expect(result.primaryResources).toEqual(["labor"]);
+    expect(result.capacities.machine.status).toBe("unavailable");
+  });
+
+  it("warns on calculator/profile labor conflicts and suppresses owner-benefit labor efficiency", () => {
+    const mismatched = product("mismatch", "Mismatch", { production: production(), pricingLaborMinutes: 5 });
+    const output = compare([mismatched, product("match", "Match", { production: production() })], undefined);
+    expect(output.compatibilityWarnings).toContainEqual(expect.objectContaining({ productId: "mismatch", code: "labor_profile_mismatch", message: expect.stringContaining("5 minutes") }));
+    expect(output.products[0].metrics.activeLaborMinutesPerSellableProduct).toMatchObject({ status: "available", value: 8 });
+    expect(output.products[0].metrics.ownerEconomicBenefitPerLaborHour).toMatchObject({ status: "unavailable", reason: { code: "labor_profile_mismatch" } });
+    expect(output.products[0].metrics.businessProfitPerLaborHour.status).toBe("available");
+    expect(output.categoryLeaders.highestOwnerBenefitPerLaborHour.status).toBe("unavailable");
+  });
+
+  it("suppresses impossible stored elapsed time and emits a data-quality warning", () => {
+    const impossible = production({ totalElapsedMinutesPerBatch: 39 });
+    const output = compare([product("bad", "Bad Elapsed", { production: impossible }), product("good", "Good", { production: production() })], undefined);
+    expect(output.products[0].metrics.totalElapsedMinutesPerBatch).toMatchObject({ status: "unavailable", reason: { code: "impossible_elapsed_time" } });
+    expect(output.compatibilityWarnings).toContainEqual(expect.objectContaining({ productId: "bad", code: "impossible_elapsed_time" }));
+  });
+
+  it("reports maximum complete batches and sellable products for every supplied resource", () => {
+    const result = compare().bottlenecksByProduct.a;
+    expect(result.capacities.labor).toMatchObject({ status: "available", maxCompleteBatches: 2, maxSellableProducts: 8 });
+    expect(result.capacities.machine).toMatchObject({ status: "available", maxCompleteBatches: 2, maxSellableProducts: 8 });
+    expect(result.capacities.working_capital).toMatchObject({ status: "available", maxCompleteBatches: 2, maxSellableProducts: 8 });
+  });
+
+  it("treats zero-demand resources as non-limiting", () => {
+    const zeroProduction = production({ setupLaborMinutesPerBatch: 0, activeLaborMinutesPerUnit: 0, finishingLaborMinutesPerUnit: 0, primaryMachine: { key: "laser-a", label: "Laser A", occupiedMinutesPerBatch: 0, supervisedMinutesPerBatch: 0 } });
+    const zeroCash = cash({ upfrontCashCostPerUnit: 0, fixedUpfrontCashCostPerBatch: 0 });
+    const result = compare([product("a", "A", { production: zeroProduction, cash: zeroCash }), product("b", "B")]).bottlenecksByProduct.a;
+    expect(result.capacities.labor).toMatchObject({ status: "available", nonLimiting: true, maxCompleteBatches: null });
+    expect(result.capacities.machine).toMatchObject({ status: "available", nonLimiting: true });
+    expect(result.capacities.working_capital).toMatchObject({ status: "available", nonLimiting: true });
     expect(result.primaryResources).toEqual([]);
+  });
+
+  it("uses relative near-tie tolerance so 0.1%, 0.4%, and 4% are not tied", () => {
+    const result = compare(undefined, { availableLaborMinutes: 32000, availableMachineMinutesByKey: { "laser-a": 10000 }, workingCapitalCeiling: 650 }).bottlenecksByProduct.a;
+    expect(result.utilizations.labor).toMatchObject({ status: "available", value: 0.001 });
+    expect(result.utilizations.machine).toMatchObject({ status: "available", value: 0.004 });
+    expect(result.utilizations.working_capital).toMatchObject({ status: "available", value: 0.04 });
+    expect(result.nearTiedResources).toEqual(["working_capital"]);
   });
 
   it("rejects every explicitly supplied invalid capacity", () => {
@@ -333,7 +378,7 @@ describe("runtime bottlenecks and explanations", () => {
     const second = compare(products).explanation;
     expect(first).toEqual(second);
     expect(first.join(" ")).toContain("Alpha generates the greatest net business profit per sale");
-    expect(first.join(" ")).toContain("version-compatibility warning");
+    expect(first.join(" ")).toContain("compatibility or data-quality warning");
     expect(first.join(" ")).not.toMatch(/overall best|best product/i);
   });
 

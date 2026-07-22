@@ -34,6 +34,11 @@ export function ProfileAssistant({ context, form, onApply }: {
       alreadyCurrent, selectedByDefault: false, conflict: alreadyCurrent ? "already-current" as const : "replaces-existing" as const };
   }) }), [form, result]);
   const candidates = useMemo(() => cashCandidates(context), [context]);
+  const stepSixErrors = [
+    ...(answers.fixedBatchCostAnswer === "amount" && (answers.fixedBatchCost === undefined || !Number.isFinite(answers.fixedBatchCost) || answers.fixedBatchCost < 0) ? ["Enter a valid nonnegative fixed batch amount after selecting Yes."] : []),
+    ...(answers.launchCostAnswer === "amount" && (answers.launchCost === undefined || !Number.isFinite(answers.launchCost) || answers.launchCost < 0) ? ["Enter a valid nonnegative launch-cost amount after selecting Yes."] : []),
+  ];
+  const elapsedErrors = result.errors.filter((error) => error.includes("elapsed wall-clock time"));
 
   function update<K extends keyof ProfileAssistantAnswers>(field: K, value: ProfileAssistantAnswers[K]) {
     setAnswers((current) => ({ ...current, [field]: value }));
@@ -62,16 +67,15 @@ export function ProfileAssistant({ context, form, onApply }: {
       <div className="mt-4">{step === 1 ? <BatchStep answers={answers} update={update} /> : null}
         {step === 2 ? <MachineStep context={context} answers={answers} update={update} /> : null}
         {step === 3 ? <LaborStep context={context} answers={answers} update={update} /> : null}
-        {step === 4 ? <TimingStep answers={answers} update={update} /> : null}
+        {step === 4 ? <><TimingStep answers={answers} update={update} />{elapsedErrors.length ? <ErrorList errors={elapsedErrors} /> : null}</> : null}
         {step === 5 ? <CashStep candidates={candidates} answers={answers} update={update} /> : null}
-        {step === 6 ? <FixedCostsStep answers={answers} update={update} /> : null}
+        {step === 6 ? <><FixedCostsStep answers={answers} update={update} />{stepSixErrors.length ? <ErrorList errors={stepSixErrors} /> : null}</> : null}
         {step === 7 ? <Review result={reviewResult} selected={selected} setSelected={setSelected} /> : null}
       </div>
-      {step < 7 && result.errors.length && step === 6 ? <ErrorList errors={result.errors} /> : null}
       <div className="mt-5 flex flex-wrap gap-2">
         {step > 1 ? <button type="button" onClick={() => setStep((value) => value - 1)} className="rounded border border-slate-600 px-3 py-2">Back</button> : null}
         {step < 6 ? <button type="button" onClick={() => setStep((value) => value + 1)} className="rounded bg-emerald-500 px-3 py-2 font-semibold text-slate-950">Continue</button> : null}
-        {step === 6 ? <button type="button" onClick={showReview} className="rounded bg-emerald-500 px-3 py-2 font-semibold text-slate-950">Review suggestions</button> : null}
+        {step === 6 ? <button type="button" disabled={stepSixErrors.length > 0} onClick={showReview} className="rounded bg-emerald-500 px-3 py-2 font-semibold text-slate-950 disabled:opacity-50">Review suggestions</button> : null}
         {step === 7 ? <button type="button" disabled={!result.valid || selected.size === 0} onClick={apply} className="rounded bg-emerald-500 px-3 py-2 font-semibold text-slate-950 disabled:opacity-50">Apply selected suggestions to profile form</button> : null}
       </div>
     </section> : null}
