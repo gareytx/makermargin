@@ -1,4 +1,5 @@
 import type { MetricResult, MetricUnit } from "./product-comparison";
+import type { ProductComparisonMetrics } from "./product-comparison";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -33,3 +34,28 @@ export function utilizationLabel(value: number): string {
   if (value >= 0.8) return "Near the supplied limit";
   return "Within the supplied limit";
 }
+
+export const comparisonMetricLabels: Record<keyof ProductComparisonMetrics, string> = {
+  sellingPrice: "selling price",
+  ownerLaborCompensation: "owner labor compensation",
+  machineCost: "allocated economic machine cost",
+  netBusinessProfit: "net business profit",
+  profitMarginPercentage: "profit margin",
+  ownerEconomicBenefit: "owner economic benefit",
+  totalCashCostPerSale: "total cash cost per standard sale",
+  upfrontCashRequiredPerUnit: "upfront cash per sellable product",
+  upfrontCashRequiredPerBatch: "upfront cash per representative batch",
+  activeLaborMinutesPerBatch: "active labor per representative batch",
+  activeLaborMinutesPerSellableProduct: "active labor per sellable product",
+  occupiedMachineMinutesPerSellableProduct: "occupied machine time per sellable product",
+  totalElapsedMinutesPerBatch: "observed elapsed time per representative batch",
+  businessProfitPerLaborHour: "business profit per active labor hour",
+  ownerEconomicBenefitPerLaborHour: "owner benefit per active labor hour",
+  businessProfitPerMachineHour: "business profit per occupied machine hour",
+  unitsPerLaborHour: "units per active labor hour",
+  unitsPerMachineHour: "units per occupied machine hour",
+  netBusinessProfitPerBatch: "net business profit per representative batch",
+  ownerEconomicBenefitPerBatch: "owner economic benefit per representative batch",
+  setupLaborMinutesPerSellableProduct: "setup labor per sellable product",
+  breakEvenUnits: "break-even sellable products",
+};
