@@ -4,8 +4,7 @@ export type ProductPresetId =
   | "slate-coasters"
   | "metal-wallet-card"
   | "leather-journal"
-  | "cutting-board"
-  | "digital-print";
+  | "cutting-board";
 
 export type ProductPreset = {
   readonly id: ProductPresetId;
@@ -13,8 +12,7 @@ export type ProductPreset = {
   readonly description: string;
   readonly assumptionType:
     | "verified-supplier"
-    | "business-baseline"
-    | "amortized-estimate";
+    | "business-baseline";
   readonly lastReviewed: string;
   readonly assumptionNotes: readonly string[];
   readonly sourceLabel?: string;
@@ -189,39 +187,6 @@ export const productPresets: readonly ProductPreset[] = Object.freeze([
       fixedTransactionFee: 0.45,
       shippingCost: 12,
       customerPaysShipping: false,
-      desiredMarginPercentage: 30,
-    },
-  },
-  {
-    id: "digital-print",
-    label: "Digital print",
-    description: "An amortized labor and Etsy US fee estimate for a digital download.",
-    assumptionType: "amortized-estimate",
-    lastReviewed: "2026-07-14",
-    sourceLabel: "Etsy US fee baseline",
-    assumptionNotes: [
-      "The labor value allocates 45 minutes of creation work across 10 expected sales.",
-      "Actual allocated labor equals total creation and listing time divided by expected sales.",
-      "The fixed fee combines a $0.20 listing fee and the $0.25 US Etsy Payments flat fee.",
-      "The percentage fees use a 6.5% Etsy transaction fee and 3% US payment-processing fee.",
-      "Offsite Ads and optional advertising expenses are not included.",
-      "Digital-product profitability depends heavily on the number of sales over which creation labor is spread.",
-    ],
-    values: {
-      productName: "Digital Art Download",
-      materialCost: 0,
-      packagingCost: 0,
-      otherCost: 0,
-      wastePercentage: 0,
-      machineMinutes: 0,
-      machineHourlyRate: 7.75,
-      laborMinutes: 5,
-      laborHourlyRate: 40,
-      marketplaceFeePercentage: 6.5,
-      processingFeePercentage: 3,
-      fixedTransactionFee: 0.45,
-      shippingCost: 0,
-      customerPaysShipping: true,
       desiredMarginPercentage: 30,
     },
   },

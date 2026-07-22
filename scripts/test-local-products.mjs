@@ -33,8 +33,8 @@ try {
   const custom = await first.from("saved_products").insert(row(users[0], "A", null)).select("*").single();
   assert(!custom.error && custom.data.source_preset_id === null, "custom product stores null preset provenance");
   assert(custom.data.pricing_inputs.schemaVersion === "pricing-input-v1" && custom.data.calculation_snapshot.formulaVersion === "pricing-v1", "product stores versioned snapshots");
-  const preset = await first.from("saved_products").insert(row(users[0], "Preset", "slate-coasters")).select("*").single();
-  assert(!preset.error && preset.data.source_preset_id === "slate-coasters", "preset product stores historical preset ID");
+  const preset = await first.from("saved_products").insert(row(users[0], "Legacy Digital", "digital-print")).select("*").single();
+  assert(!preset.error && preset.data.source_preset_id === "digital-print", "product preserves a retired historical preset ID");
   assert(!(await first.from("saved_products").insert(row(users[0], "x"))).error, "one-character name succeeds");
   assert(!(await first.from("saved_products").insert(row(users[0], "x".repeat(120)))).error, "120-character name succeeds");
   for (const bad of ["", "   ", "x".repeat(121)]) assert(Boolean((await first.from("saved_products").insert(row(users[0], bad))).error), `invalid name length ${bad.length} fails`);

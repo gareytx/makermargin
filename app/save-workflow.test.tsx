@@ -70,6 +70,27 @@ describe("calculator save workflow", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
+  it("restores a legacy digital-print draft as Custom without replacing stored values", async () => {
+    mocks.session = {};
+    const legacyValues = {
+      ...customProductTemplate.values,
+      productName: "Legacy Digital Download",
+      materialCost: 12.34,
+      laborMinutes: 17,
+    };
+    mocks.getDraft.mockReturnValue({ id: "550e8400-e29b-41d4-a716-446655440000", pricingInputs: { schemaVersion: "pricing-input-v1", basis: "per_sellable_product", data: legacyValues }, sourcePresetId: "digital-print", intendedProductName: "Legacy Digital Download", version: 1, createdAt: "2026-07-21T00:00:00Z", expiresAt: "2026-07-22T00:00:00Z", returnPath: "/", intendedAction: "save-product" });
+    window.history.replaceState({}, "", "/?draft=550e8400-e29b-41d4-a716-446655440000");
+
+    render(<Home />);
+    await screen.findByText("Resume saving this product?");
+    fireEvent.click(screen.getByRole("button", { name: "Restore draft" }));
+
+    expect((screen.getAllByLabelText("Product name")[0] as HTMLInputElement).value).toBe("Legacy Digital Download");
+    expect((screen.getByLabelText("Material cost") as HTMLInputElement).value).toBe("12.34");
+    expect((screen.getByLabelText("Labor time in minutes") as HTMLInputElement).value).toBe("17");
+    expect((screen.getByLabelText("Product preset") as HTMLSelectElement).value).toBe("custom");
+  });
+
   it("deletes a consumed pending draft only after a successful save", async () => {
     mocks.session = {};
     mocks.getDraft.mockReturnValue({ id: "550e8400-e29b-41d4-a716-446655440000", pricingInputs: { schemaVersion: "pricing-input-v1", basis: "per_sellable_product", data: customProductTemplate.values }, sourcePresetId: null, intendedProductName: "Pending", version: 1, createdAt: "2026-07-21T00:00:00Z", expiresAt: "2026-07-22T00:00:00Z", returnPath: "/", intendedAction: "save-product" });

@@ -50,7 +50,7 @@ export type PendingSaveDraft = {
   createdAt: string;
   expiresAt: string;
   pricingInputs: PricingInputSnapshot;
-  sourcePresetId: ProductPresetId | null;
+  sourcePresetId: ProductPresetId | string | null;
   intendedProductName: string;
   returnPath: "/";
   intendedAction: "save-product";

@@ -12,7 +12,7 @@ vi.mock("@/lib/saved-product-actions", () => ({ updateSavedProductAction: mocks.
 import { SavedProductEditor } from "./saved-product-editor";
 
 const snapshots = createCurrentSnapshots(customProductTemplate.values, "2026-07-21T00:00:00Z");
-const product: SavedProduct = { id: "one", userId: "user", name: "Custom Product", sourcePresetId: "retired-preset", ...snapshots, rawPricingInputs: snapshots.pricingInputs, rawCalculationSnapshot: snapshots.calculationSnapshot, createdAt: "2026-07-20T00:00:00Z", updatedAt: "2026-07-21T00:00:00Z" };
+const product: SavedProduct = { id: "one", userId: "user", name: "Custom Product", sourcePresetId: "digital-print", ...snapshots, rawPricingInputs: snapshots.pricingInputs, rawCalculationSnapshot: snapshots.calculationSnapshot, createdAt: "2026-07-20T00:00:00Z", updatedAt: "2026-07-21T00:00:00Z" };
 const profiledSnapshots = createCurrentSnapshots(customProductTemplate.values, "2026-07-21T00:00:00Z", {
   productionProfile: { schemaVersion: PRODUCTION_PROFILE_VERSION, unitsPerBatch: 2 },
   cashProfile: { schemaVersion: CASH_PROFILE_VERSION, upfrontCashCostPerUnit: 0 },

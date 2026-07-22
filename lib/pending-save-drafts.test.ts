@@ -76,6 +76,18 @@ describe("pending save drafts", () => {
     expect(getPendingSaveDraft(draft.id, { storage })?.pricingInputs.data.productName)
       .toBe(customProductTemplate.values.productName);
   });
+  it("preserves a legacy digital-print source and its stored inputs", () => {
+    const draft = createPendingSaveDraft(customProductTemplate.values, null)!;
+    const legacyDraft = structuredClone(draft);
+    legacyDraft.sourcePresetId = "digital-print";
+    legacyDraft.pricingInputs.data.productName = "Legacy Digital Download";
+    legacyDraft.pricingInputs.data.materialCost = 12.34;
+
+    const validated = validatePendingSaveDraft(legacyDraft);
+    expect(validated?.sourcePresetId).toBe("digital-print");
+    expect(validated?.pricingInputs.data.productName).toBe("Legacy Digital Download");
+    expect(validated?.pricingInputs.data.materialCost).toBe(12.34);
+  });
   it("handles unavailable or quota-failing storage", () => {
     const broken = new MemoryStorage();
     vi.spyOn(broken, "setItem").mockImplementation(() => { throw new Error("quota"); });
