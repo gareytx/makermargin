@@ -110,7 +110,7 @@ describe("profile assistant proposals", () => {
     const result = buildProfileAssistantProposal(context(), { ...direct, usesMachine: true, machineName: "Laser", machineTimeBasis: "whole-batch", machineSupervision: "full-run", totalElapsedMinutesPerBatch: 10, fixedBatchCostAnswer: "zero", launchCostAnswer: "zero" });
     expect(result.proposals.find((item) => item.field === "fixedUpfrontCashCostPerBatch")).toMatchObject({ value: 0, source: "explicit-zero" });
     expect(result.proposals.find((item) => item.field === "fixedProductLaunchCost")).toMatchObject({ value: 0, source: "explicit-zero" });
-    expect(result.warnings.join(" ")).toContain("shorter");
+    expect(result.errors.join(" ")).toContain("cannot be shorter");
   });
 
   it("derives explicit zero cash when every reviewed component is not a cash cost", () => {

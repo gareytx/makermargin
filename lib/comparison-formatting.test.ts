@@ -26,7 +26,7 @@ describe("comparison presentation formatting", () => {
 
   it("provides readable labels for every comparison metric", () => {
     expect(Object.keys(comparisonMetricLabels)).toHaveLength(22);
-    expect(comparisonMetricLabels.ownerEconomicBenefitPerLaborHour).toBe("owner benefit per active labor hour");
+    expect(comparisonMetricLabels.ownerEconomicBenefitPerLaborHour).toBe("owner benefit per hands-on owner labor hour");
     expect(Object.values(comparisonMetricLabels).join(" ")).not.toMatch(/[a-z][A-Z]/);
   });
 });
