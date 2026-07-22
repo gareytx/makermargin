@@ -36,6 +36,7 @@ export function ProductsList({ initialProducts }: { initialProducts: SavedProduc
 
   return <>
     {message ? <p role="alert" className="mb-4 rounded border border-red-800 bg-red-950 p-3">{message}</p> : null}
+    <div className="mb-4 flex justify-end"><Link className="rounded border border-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-300" href="/compare">Compare products</Link></div>
     <div className="grid gap-3">
       {products.map((product) => {
         const result = product.calculationSnapshot?.data.result;

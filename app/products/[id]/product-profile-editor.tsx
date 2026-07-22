@@ -69,7 +69,7 @@ export function ProductProfileEditor({ product, onSaved, onDirtyChange }: {
     });
   }
 
-  return <section className="mt-6 rounded-lg border border-slate-700 bg-slate-900 p-4">
+  return <section id="production-cash-profile" className="mt-6 scroll-mt-6 rounded-lg border border-slate-700 bg-slate-900 p-4">
     <h2 className="text-xl font-semibold">Production &amp; cash profile</h2>
     <p className="mt-1 text-sm text-slate-300">Optional details for future product comparisons. They do not change your recommended price.</p>
     <div ref={feedbackRef} tabIndex={-1} className="outline-none">
