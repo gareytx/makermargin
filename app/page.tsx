@@ -197,6 +197,12 @@ export default function Home() {
             MakerMargin calculates your true cost, recommended price, profit,
             margin, hourly earnings, and product viability.
           </p>
+          <p className="mt-3 max-w-3xl text-sm text-slate-400">
+            MakerMargin is designed for physical products that makers manufacture,
+            customize, engrave, print, assemble, package, or finish. Digital products
+            can still be entered manually using Custom Product, but digital sales-volume
+            amortization is not modeled automatically.
+          </p>
         </section>
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -545,7 +551,6 @@ function assumptionLabel(
   const labels = {
     "business-baseline": "Business baseline",
     "verified-supplier": "Supplier price verified",
-    "amortized-estimate": "Amortized estimate",
     template: "Custom template",
   } satisfies Record<CalculatorStartingPoint["assumptionType"], string>;
 

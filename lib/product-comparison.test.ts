@@ -31,6 +31,7 @@ function product(
     production?: PricingInputSnapshotV2["productionProfile"];
     cash?: PricingInputSnapshotV2["cashProfile"];
     v1?: boolean;
+    sourcePresetId?: string | null;
   } = {}
 ): SavedProduct {
   const pair = createCurrentSnapshots(customProductTemplate.values, generatedAt, {
@@ -51,7 +52,7 @@ function product(
     id,
     userId: "user-1",
     name,
-    sourcePresetId: null,
+    sourcePresetId: options.sourcePresetId ?? null,
     pricingInputs,
     calculationSnapshot: pair.calculationSnapshot,
     formulaVersion: pair.formulaVersion,
@@ -97,6 +98,19 @@ function compare(products = [
 }
 
 describe("comparison-v1 core and profile metrics", () => {
+  it("compares a supported historical digital-print snapshot without rewriting provenance", () => {
+    const historical = product("legacy", "Legacy Digital", {
+      sourcePresetId: "digital-print",
+    });
+    const result = compare([
+      historical,
+      product("current", "Current Product"),
+    ], undefined);
+
+    expect(result.products[0].metrics.sellingPrice.status).toBe("available");
+    expect(historical.sourcePresetId).toBe("digital-print");
+  });
+
   it("uses stored pricing results and stable owner-benefit meanings", () => {
     const metrics = compare().products[0].metrics;
     expect(metrics.sellingPrice).toMatchObject({ status: "available", value: 50 });

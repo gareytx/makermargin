@@ -8,7 +8,6 @@ const presetCases = [
   ["metal-wallet-card", "Metal Wallet Card"],
   ["leather-journal", "Engraved Leatherette Journal"],
   ["cutting-board", "Engraved Premium Cutting Board"],
-  ["digital-print", "Digital Art Download"],
 ] as const;
 
 function presetSelector(): HTMLSelectElement {
@@ -38,7 +37,15 @@ describe("product preset calculator", () => {
       "Product presets",
     ]);
     expect(groups[0]?.querySelectorAll("option")).toHaveLength(1);
-    expect(groups[1]?.querySelectorAll("option")).toHaveLength(5);
+    expect(groups[1]?.querySelectorAll("option")).toHaveLength(4);
+    expect(selector.querySelector('option[value="digital-print"]')).toBeNull();
+  });
+
+  test("explains the physical-product scope and manual digital entry", () => {
+    render(<Home />);
+    expect(
+      screen.getByText(/designed for physical products/i).textContent
+    ).toContain("Digital products can still be entered manually using Custom Product");
   });
 
   test("editing a populated value shows and announces Modified", () => {
