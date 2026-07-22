@@ -108,11 +108,12 @@ export function deriveActiveLaborMinutesPerBatch(profile: ProductionProfileV1): 
   if (profile.setupLaborMinutesPerBatch === undefined) return missing("setupLaborMinutesPerBatch");
   if (profile.activeLaborMinutesPerUnit === undefined) return missing("activeLaborMinutesPerUnit");
   if (profile.finishingLaborMinutesPerUnit === undefined) return missing("finishingLaborMinutesPerUnit");
-  if (profile.primaryMachine?.supervisedMinutesPerBatch === undefined) return missing("primaryMachine.supervisedMinutesPerBatch");
+  if (profile.primaryMachine && profile.primaryMachine.supervisedMinutesPerBatch === undefined) return missing("primaryMachine.supervisedMinutesPerBatch");
+  const supervisedMinutes = profile.primaryMachine?.supervisedMinutesPerBatch ?? 0;
   return { available: true, value: profile.setupLaborMinutesPerBatch +
     profile.unitsPerBatch * profile.activeLaborMinutesPerUnit +
     profile.unitsPerBatch * profile.finishingLaborMinutesPerUnit +
-    profile.primaryMachine.supervisedMinutesPerBatch };
+    supervisedMinutes };
 }
 
 export function deriveActiveLaborMinutesPerUnit(profile: ProductionProfileV1): DerivedProfileValue {

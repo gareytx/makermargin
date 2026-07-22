@@ -12,9 +12,10 @@ import {
 } from "@/lib/product-profiles";
 import { updateSavedProductProfilesAction } from "@/lib/saved-product-actions";
 import type { SavedProduct } from "@/lib/saved-products";
+import { ProfileAssistant } from "./profile-assistant";
 
-type ProfileForm = Record<Field, string>;
-type Field = "unitsPerBatch" | "setupLaborMinutesPerBatch" | "activeLaborMinutesPerUnit" |
+export type ProfileForm = Record<Field, string>;
+export type Field = "unitsPerBatch" | "setupLaborMinutesPerBatch" | "activeLaborMinutesPerUnit" |
   "finishingLaborMinutesPerUnit" | "machineLabel" | "occupiedMinutesPerBatch" |
   "supervisedMinutesPerBatch" | "passiveWaitMinutesPerBatch" | "totalElapsedMinutesPerBatch" |
   "cashCostPerSale" | "upfrontCashCostPerUnit" | "fixedUpfrontCashCostPerBatch" | "fixedProductLaunchCost";
@@ -69,15 +70,32 @@ export function ProductProfileEditor({ product, onSaved, onDirtyChange }: {
     });
   }
 
+  function applyAssistant(next: ProfileForm) {
+    setForm(next);
+    setMessage("");
+    setErrors([]);
+    onDirtyChange(JSON.stringify(next) !== JSON.stringify(initial));
+  }
+
+  const profiles = existingProfiles(product);
+  const assistantContext = product.pricingInputs && product.calculationSnapshot ? {
+    pricingInput: product.pricingInputs.data,
+    calculationSnapshot: product.calculationSnapshot,
+    productionProfile: profiles.productionProfile,
+    cashProfile: profiles.cashProfile,
+  } : null;
+
   return <section id="production-cash-profile" className="mt-6 scroll-mt-6 rounded-lg border border-slate-700 bg-slate-900 p-4">
     <h2 className="text-xl font-semibold">Production &amp; cash profile</h2>
     <p className="mt-1 text-sm text-slate-300">Optional details for future product comparisons. They do not change your recommended price.</p>
+    {assistantContext ? <ProfileAssistant context={assistantContext} form={form} onApply={applyAssistant} /> : <p className="mt-4 rounded border border-amber-700 bg-amber-950/40 p-3 text-sm">Profile suggestions are unavailable for this historical snapshot. Manual profile behavior remains unchanged.</p>}
     <div ref={feedbackRef} tabIndex={-1} className="outline-none">
       {errors.length ? <div role="alert" className="mt-4 rounded border border-red-700 bg-red-950 p-3"><p className="font-semibold">Check the profile details</p><ul className="list-disc pl-5 text-sm">{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
       {message ? <p role={message.includes("saved") ? "status" : "alert"} aria-live="polite" className="mt-4 rounded border border-slate-600 p-3">{message}</p> : null}
     </div>
 
     <h3 className="mt-5 font-semibold text-emerald-300">Representative production batch</h3>
+    <p className="mt-1 text-sm text-slate-400">Per-product values apply to one sellable item; per-batch values apply once to the representative run. Use 0 when none and leave blank when unknown.</p>
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
       <ProfileField label="Sellable products per batch" value={form.unitsPerBatch} onChange={(value) => change("unitsPerBatch", value)} step="1" />
       <ProfileField label="Setup labor per batch (minutes)" value={form.setupLaborMinutesPerBatch} onChange={(value) => change("setupLaborMinutesPerBatch", value)} />
@@ -91,7 +109,7 @@ export function ProductProfileEditor({ product, onSaved, onDirtyChange }: {
     </div>
 
     <h3 className="mt-6 font-semibold text-emerald-300">Cash requirements</h3>
-    <p className="mt-1 text-sm text-slate-400">Enter actual cash amounts only. Owner labor and allocated machine cost are excluded.</p>
+    <p className="mt-1 text-sm text-slate-400">Enter actual cash amounts only. Owner labor and allocated machine cost are economic costs, not cash. Observed elapsed time is wall-clock time; supervised machine time is hands-on labor during a run.</p>
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
       <ProfileField label="Variable cash cost per sale ($)" value={form.cashCostPerSale} onChange={(value) => change("cashCostPerSale", value)} />
       <ProfileField label="Upfront cash cost per product ($)" value={form.upfrontCashCostPerUnit} onChange={(value) => change("upfrontCashCostPerUnit", value)} />

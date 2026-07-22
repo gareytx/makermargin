@@ -60,6 +60,18 @@ describe("product profile contracts", () => {
     expect(deriveActiveLaborMinutesPerUnit(production)).toEqual({ available: true, value: 10.75 });
   });
 
+  it("derives machine-free active labor without fabricating supervision", () => {
+    const machineFree = { ...production, primaryMachine: undefined };
+    expect(deriveActiveLaborMinutesPerBatch(machineFree)).toEqual({ available: true, value: 38 });
+    expect(deriveActiveLaborMinutesPerUnit(machineFree)).toEqual({ available: true, value: 9.5 });
+    expect(deriveOccupiedMachineMinutesPerUnit(machineFree)).toMatchObject({ available: false, missingField: "primaryMachine" });
+  });
+
+  it("still requires explicit supervision for machine products", () => {
+    const missingSupervision = { ...production, primaryMachine: { ...production.primaryMachine!, supervisedMinutesPerBatch: undefined } };
+    expect(deriveActiveLaborMinutesPerBatch(missingSupervision)).toMatchObject({ available: false, missingField: "primaryMachine.supervisedMinutesPerBatch" });
+  });
+
   it("derives occupied machine minutes per product without infinity", () => {
     expect(deriveOccupiedMachineMinutesPerUnit(production)).toEqual({ available: true, value: 10 });
     expect(deriveOccupiedMachineMinutesPerUnit({ ...production, primaryMachine: undefined })).toMatchObject({ available: false, missingField: "primaryMachine" });
