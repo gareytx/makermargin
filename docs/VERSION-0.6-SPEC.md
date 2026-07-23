@@ -16,7 +16,8 @@ The central question is:
 Version 0.6 evaluates plans created by the user. It does not automatically optimize a product mix or forecast demand.
 
 ## Goals
-- Let an authenticated user create a temporary planning scenario from two or more eligible saved products.
+- Let an authenticated user create a temporary planning scenario from at least
+  two selected saved products, with positive batches limited to ready products.
 - Let the user assign planned quantities by complete representative batch.
 - Calculate portfolio-level revenue, cash requirements, owner labor, machine occupancy, owner compensation, business profit, and owner economic benefit.
 - Compare total resource demand with user-supplied labor, machine, and working-capital constraints.
@@ -80,7 +81,10 @@ The user labels one planning period using a predefined period type:
 - Craft show or event
 - Custom period
 
-The label provides context only. Version 0.6 does not infer dates, working days, demand, or available resources from the period type.
+The label is trimmed and must contain 1–80 characters after trimming. The
+validated trimmed label is preserved in the result. The period type and label
+provide context only. Version 0.6 does not infer dates, working days, demand, or
+available resources from either value.
 
 ## Primary user flow
 1. Open `/plan` while authenticated.
@@ -88,18 +92,21 @@ The label provides context only. Version 0.6 does not infer dates, working days,
 3. Review portfolio-readiness for each product.
 4. Enter complete planned batches for selected products.
 5. Optionally enter expected demand ceilings per product.
-6. Enter available owner labor hours, working capital, and available hours for each represented primary machine.
+6. Optionally enter available owner labor hours, working capital, and available
+   hours for represented primary machines.
 7. Review portfolio totals, per-product contributions, utilization, overages, bottlenecks, and warnings.
 8. Adjust quantities or constraints and recalculate immediately.
 9. Leave or reset the scenario; no scenario is persisted.
 
 ## Eligibility
-A product is portfolio-eligible when the application can safely derive:
+A product is ready for positive-batch planning when the application can safely
+derive:
 
 - Stored selling price.
 - Units per representative batch.
 - Total hands-on owner labor per representative batch.
-- Total occupied time per represented primary machine per batch, or an explicit no-machine requirement.
+- Total occupied time per represented primary machine per batch, or the
+  historical machine-free representation defined below.
 - Total cash cost per standard sale.
 - Upfront cash per sellable product.
 - Fixed upfront cash per batch.
@@ -107,14 +114,60 @@ A product is portfolio-eligible when the application can safely derive:
 - Net business profit per sellable product.
 - Owner economic benefit per sellable product.
 
-A product may still appear in selection with structured readiness guidance, but it cannot receive planned batches until all required portfolio fields are available and internally consistent.
+A product may still appear in selection with structured readiness guidance. An
+unready product may remain selected only with `plannedBatches: 0`; only ready
+products may receive positive planned batches. Zero-batch lines retain readiness
+and provenance results but contribute nothing to portfolio totals.
 
-Existing Version 0.5 data-quality exclusions remain authoritative. Version 0.6 must not bypass labor conflicts, impossible elapsed-time warnings, unsupported snapshot versions, or malformed profiles.
+### Legacy machine-free compatibility
+
+For `production-profile-v1`, absence of `primaryMachine` is the historical
+machine-free representation for Version 0.6 compatibility. This is a
+compatibility inference, not proof that the user explicitly confirmed no
+machine. Provenance must identify that the machine-free status came from the
+legacy absent-machine representation.
+
+Version 0.6 does not introduce a new snapshot version, migration, or persisted
+field for this inference. A valid primary-machine profile with zero occupied
+minutes is different: it remains a represented machine with explicit zero
+demand, is non-limiting, and is not treated as missing or machine-free.
+
+### Readiness matrix
+
+- Unsupported or malformed pricing-input, calculation-snapshot, formula,
+  production-profile, or cash-profile versions are line-blocking.
+- Missing required production or cash values are line-blocking when
+  `plannedBatches > 0`.
+- A labor-profile mismatch beyond
+  `LABOR_PROFILE_TOLERANCE_MINUTES` is line-blocking when
+  `plannedBatches > 0`.
+- Impossible elapsed time is a visible non-blocking warning because Version 0.6
+  does not use elapsed time.
+- Missing or unavailable values are never converted to zero.
+- An unready product may remain selected with `plannedBatches: 0`.
+- Only ready products may receive positive planned batches.
+
+### Machine identity and shared capacity
+
+A stable machine key identifies one shared capacity pool across selected
+products.
+
+- Equal keys share capacity.
+- Different keys remain separate even when their labels match.
+- Different keys are never merged from label similarity.
+- All historical source labels are preserved in provenance.
+- Labels are normalized only for conflict detection and display resolution.
+- Conflicting nonempty normalized labels for the same key block positive-batch
+  planning until the source product data is corrected.
+- Machine resources in output are ordered by stable key ascending.
 
 ## Scenario input model
 
 ```ts
-export type PortfolioPlanVersion = "portfolio-plan-v1";
+export const PORTFOLIO_PLAN_INPUT_VERSION = "portfolio-plan-v1" as const;
+export const PORTFOLIO_ENGINE_VERSION = "portfolio-v1" as const;
+
+export type PortfolioPlanVersion = typeof PORTFOLIO_PLAN_INPUT_VERSION;
 export type PlanningPeriodType = "week" | "month" | "event" | "custom";
 
 export type PortfolioPlanInput = {
@@ -140,12 +193,65 @@ Validation rules:
 
 - At least two distinct saved products must be selected.
 - `plannedBatches` is an integer greater than or equal to zero.
-- At least one selected product must have `plannedBatches > 0` before results are presented.
+- At least one ready selected product must have `plannedBatches > 0` before
+  portfolio results are produced.
 - Demand ceilings are optional nonnegative integers.
-- Labor and machine capacities are optional finite values greater than zero when supplied.
-- Working capital is optional, finite, and nonnegative when supplied; explicit zero is valid and distinct from missing.
+- Labor, machine, and working-capital capacities are optional, finite, and
+  nonnegative when supplied. Explicit zero is valid and distinct from missing.
 - Machine constraints use stable machine keys and display historical machine labels.
-- Unknown product IDs, duplicate product IDs, incompatible products, and non-finite numbers fail validation.
+- Machine-capacity keys that do not correspond to a machine represented by the
+  selected product projections fail request validation.
+- The period label is trimmed, must contain 1–80 characters, and is returned in
+  its validated trimmed form.
+- Unknown product IDs, duplicate product IDs, invalid demand ceilings, invalid
+  capacities, invalid period labels, and non-finite numbers fail request
+  validation.
+- Any multiplication or aggregation that produces a non-finite result fails the
+  entire request with `non_finite_result`; no partial totals are returned.
+
+## Engine result and failure contract
+
+The engine distinguishes three result classes.
+
+### Request-validation failure
+
+The entire request is rejected with structured error codes for:
+
+- Malformed input structure.
+- Unsupported plan-input version.
+- Fewer than two distinct selected products.
+- Duplicate saved-product IDs.
+- Unknown saved-product IDs.
+- Negative, fractional, or non-finite planned batches.
+- Invalid demand ceilings.
+- Negative or non-finite capacities.
+- Unknown machine constraint keys.
+- Invalid period labels.
+- Any derived arithmetic overflow or non-finite result, using
+  `non_finite_result`.
+
+Request-validation failures never return partial totals.
+
+### Product-readiness result
+
+Known selected product projections return structured readiness and provenance
+results. Missing required fields, unsupported product data, and data-quality
+conflicts follow the readiness matrix above. They block positive planned batches
+but may remain visible on zero-batch lines.
+
+### Unavailable optional analysis
+
+When an optional capacity is not supplied, portfolio economics remain
+available. Utilization, remaining capacity, and the affected bottleneck analysis
+are returned as structured unavailable results with guidance to enter the
+capacity.
+
+Every successful portfolio result includes both
+`PORTFOLIO_PLAN_INPUT_VERSION` and `PORTFOLIO_ENGINE_VERSION`. Product lines
+preserve scenario input order. Readiness reasons and warnings use stable
+code-defined priority and then code ascending. Machine resources sort by stable
+machine key. Tied and near-tied resources sort by resource type and stable key.
+Generated explanations use deterministic template order.
 
 ## Per-product plan calculations
 
@@ -222,6 +328,14 @@ machine utilization
 ```
 
 Machine-free products create no machine record and consume no machine capacity.
+Represented machines with zero occupied minutes remain machine records with zero
+demand.
+
+A represented machine does not require a supplied capacity for portfolio
+economics. When its capacity is missing, the engine reports required occupied
+time, returns utilization and remaining capacity as unavailable, excludes the
+machine from limiting-resource determination, and supplies structured guidance
+to enter capacity.
 
 ### Working capital
 ```text
@@ -229,19 +343,30 @@ capital utilization
   = required upfront working capital ÷ available working capital
 ```
 
-When available working capital is explicit zero:
+### Explicit-zero and missing capacity behavior
 
-- Zero required cash produces 0% utilization.
-- Positive required cash produces an over-capacity result without Infinity or NaN.
+The same rules apply to owner labor, every represented machine, and working
+capital:
+
+- `required = 0` and `available = 0` produces 0% utilization and a non-limiting
+  result.
+- `required > 0` and `available = 0` produces an over-capacity result with no
+  finite utilization ratio; it never returns `Infinity` or `NaN`.
+- Missing capacity makes utilization and remaining capacity unavailable and
+  excludes the resource from limiting-resource analysis.
 
 ### Limiting resources
 Among supplied constraints, the primary limiting resource is the valid resource with the highest utilization.
 
-- Exact ties are preserved.
-- Near ties use the existing relative 5% policy established by Version 0.5.
+- Version 0.6 intentionally uses highest portfolio utilization, distinct from
+  Version 0.5's complete-batch-capacity bottleneck rule.
+- Exact ties use `RANKING_TOLERANCE` and are preserved.
+- Near ties use `BOTTLENECK_NEAR_TIE_TOLERANCE`, the existing relative 5%
+  policy established by Version 0.5.
 - Utilization is not clamped and may exceed 100%.
 - A limiting resource is not declared from missing constraints.
 - Demand ceilings are reported separately as market-risk limits rather than mixed into production-resource utilization.
+- Version 0.6 does not reuse Version 0.5's `bottleneckFor` implementation.
 
 ## Demand analysis
 For each product with a supplied demand ceiling:
@@ -277,6 +402,17 @@ Navigation label:
 
 `Plan production`
 
+The future `/plan` route follows the current `/compare` conventions:
+
+- Check public Supabase configuration first.
+- Verify server claims.
+- Redirect unauthenticated configured users to
+  `/login?next=%2Fplan`.
+- Load owned products through the server-only saved-product service.
+- Rely on Row Level Security.
+- Handle cloud-unavailable and service-error states safely.
+- Never trust client-provided ownership.
+
 Major interface regions:
 
 - Planning-period context.
@@ -295,6 +431,13 @@ Create a pure engine such as:
 
 `lib/product-portfolio.ts`
 
+The portfolio engine accepts immutable, parsed, plan-ready product projections.
+It does not accept raw JSON as a fallback and does not inspect unsupported
+snapshots directly. Phase 1 exports or extracts a shared single-product
+projection from `lib/product-comparison.ts` so Version 0.5 comparison and
+Version 0.6 planning consume the same stored metrics and compatibility/data-
+quality evaluation.
+
 Requirements:
 
 - No database access.
@@ -306,11 +449,32 @@ Requirements:
 - Structured available and unavailable values.
 - Deterministic explanations.
 - Version-aware compatibility checks.
-- No duplicated pricing or comparison arithmetic when an existing trusted helper already supplies the needed value.
+- No recreated pricing, labor, cash, owner-benefit, or comparison arithmetic.
+- Use validated finite stored values without intermediate monetary rounding.
+- Fail closed when multiplication or aggregation becomes non-finite.
+- Delegate display rounding to the existing comparison formatting layer.
 
-Suggested version identifier:
+The authoritative existing boundaries are:
 
-`portfolio-v1`
+- `validateProductionProfile`
+- `validateCashProfile`
+- `deriveActiveLaborMinutesPerBatch`
+- `deriveActiveLaborMinutesPerUnit`
+- `deriveOccupiedMachineMinutesPerUnit`
+- `deriveUpfrontCashRequiredPerBatch`
+- `parsePricingInputSnapshot`
+- `parseCalculationSnapshot`
+- `COMPARISON_COMPATIBILITY_MATRIX`
+- `LABOR_PROFILE_TOLERANCE_MINUTES`
+- `BOTTLENECK_NEAR_TIE_TOLERANCE`
+- `RANKING_TOLERANCE`
+- current snapshot and formula version constants
+- Version 0.5 stored metric definitions
+
+`PORTFOLIO_PLAN_INPUT_VERSION = "portfolio-plan-v1"` identifies the request
+contract. `PORTFOLIO_ENGINE_VERSION = "portfolio-v1"` identifies the engine and
+successful result contract. They have separate meanings and both appear in
+every successful result.
 
 ## Trust and safety rules
 Version 0.6 must never:
@@ -331,9 +495,15 @@ Version 0.6 must never:
 ## Compatibility
 Version 0.6 should support only saved products already accepted by the current Version 0.5 comparison and profile parsers.
 
-Historical pricing-only records remain readable elsewhere but are not portfolio-eligible until the user supplies valid production and cash profiles.
+Historical pricing-only records remain readable elsewhere and may remain
+selected with zero batches, but are not ready for positive-batch portfolio
+planning until the user supplies valid production and cash profiles.
 
 Unsupported future schema versions fail closed with structured guidance.
+
+For `production-profile-v1` only, an absent `primaryMachine` is accepted as the
+legacy machine-free compatibility representation with explicit provenance
+describing the inference. No snapshot is rewritten or upgraded.
 
 ## Testing requirements
 
@@ -341,17 +511,27 @@ Unsupported future schema versions fail closed with structured guidance.
 - Valid two-product portfolio totals.
 - Multiple products sharing one machine.
 - Products using different machines.
-- Machine-free products.
+- Legacy absent-machine compatibility and provenance.
+- Same-key label conflicts, same-label different keys, historical labels, and
+  machine-key ordering.
+- Represented zero-time machines.
 - Whole-batch enforcement.
-- Zero planned batches.
-- Explicit zero cash capacity.
+- Ready and unready zero-batch lines.
+- Explicit zero labor, machine, and cash capacity.
 - Missing constraints.
+- Missing represented-machine capacity with available portfolio economics.
+- Unknown machine-capacity keys.
 - Over-capacity labor, machine, and cash.
 - Exact and relative near-tied bottlenecks.
 - Demand ceiling overage and shortfall.
 - Missing versus zero values.
 - Unsupported and malformed saved products.
-- No Infinity, NaN, or mutation.
+- Labor-profile mismatch as line-blocking and impossible elapsed time as a
+  non-blocking warning.
+- Invalid period labels and trimmed valid labels.
+- Structured request failures, product readiness, and unavailable optional
+  analysis.
+- Arithmetic overflow, with no partial totals, `Infinity`, `NaN`, or mutation.
 - Stable deterministic explanations.
 
 ### Interface tests
@@ -380,11 +560,17 @@ Unsupported future schema versions fail closed with structured guidance.
 ## Implementation phases
 
 ### Phase 1 — Pure portfolio engine
-- Define `portfolio-v1` contracts.
-- Convert eligible saved products into plan-ready projections.
-- Calculate product and portfolio totals.
-- Calculate capacity and demand warnings.
-- Add exhaustive unit tests.
+- Export the trusted Version 0.5 single-product projection.
+- Define `portfolio-plan-v1` request and `portfolio-v1` result contracts.
+- Evaluate product readiness from immutable, parsed, plan-ready projections.
+- Calculate whole-batch quantity multiplication and portfolio aggregation.
+- Calculate capacity and demand analysis.
+- Produce deterministic provenance, warnings, and explanations.
+- Add exhaustive unit and compatibility tests.
+
+Phase 1 does not include `/plan`, React components, server actions, persistence,
+database migrations, generated database-type changes, dependencies, pricing or
+viability formula changes, saved-product mutations, or scenario optimization.
 
 ### Phase 2 — Planning interface
 - Add `/plan` route and navigation.
