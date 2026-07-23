@@ -5,8 +5,10 @@
 This document audits `docs/VERSION-0.6-SPEC.md` against `main` at commit
 `9ebc5c8665e6283df7799960e66b148e5adf9180`.
 
-The Version 0.6 specification remains unchanged. The amendments below are
-proposals for explicit approval before Phase 1 implementation.
+The original audit evidence and findings below are preserved. The product
+decisions were approved on July 23, 2026, and the authoritative specification
+was amended on `docs/version-0.6-portfolio-planning`. Each finding now records
+its approved disposition so the original concern remains traceable.
 
 ## Executive assessment
 
@@ -15,8 +17,7 @@ current architecture. The stored pricing result, Version 0.4 production and cash
 profiles, Version 0.5 comparison projection, and version-aware snapshot parsers
 already provide most of the required trust boundary.
 
-Phase 1 should not begin until the specification resolves four blocking
-decisions:
+The original audit identified four blocking decisions:
 
 1. how a stored profile proves that a product is explicitly machine-free;
 2. whether Version 0.5 data-quality warnings make the whole product ineligible
@@ -26,9 +27,10 @@ decisions:
 4. the exact output and failure contract for readiness, validation, and
    structured unavailable values.
 
-The specification also needs to distinguish intentional Version 0.6 semantics
-from Version 0.5 comparison semantics for zero working capital and limiting
-resources.
+Those decisions, plus the other implementation decisions identified by the
+audit, are now resolved in the specification. Phase 1 is unblocked within its
+approved pure-engine scope. The remaining risks in section 8 are non-blocking
+implementation and regression risks.
 
 ## 1. Conflicts with existing code semantics
 
@@ -58,6 +60,12 @@ ineligible because no such proof exists.
 representation, or approve a future versioned profile change. The latter is
 outside the current no-migration/no-snapshot-change scope.
 
+**Approved disposition — resolved:** For `production-profile-v1`, absence of
+`primaryMachine` is the historical machine-free representation for Version 0.6.
+It is explicitly documented as a compatibility inference, not proof of a prior
+user confirmation. Provenance must record the legacy absent-machine source. No
+snapshot version, migration, or persisted field is introduced.
+
 ### 1.2 Version 0.5 warnings are metric-specific, not product-wide exclusions
 
 The specification says Version 0.6 must not bypass labor conflicts or impossible
@@ -83,6 +91,12 @@ mismatch line-blocking because labor capacity is a core portfolio metric, while
 treating impossible elapsed time as a surfaced non-blocking warning because
 elapsed time is not used by Version 0.6.
 
+**Approved disposition — resolved:** Unsupported or malformed versions are
+line-blocking. Missing required production or cash values and labor-profile
+mismatches are line-blocking only for positive-batch lines. Impossible elapsed
+time is a visible non-blocking warning. Unready products may remain selected
+with zero batches, and missing values never become zero.
+
 ### 1.3 Limiting-resource semantics differ from Version 0.5
 
 Version 0.6 defines the primary limiting resource as the supplied resource with
@@ -99,6 +113,10 @@ Version 0.5 primary-bottleneck definition.
 The specification should label this as an intentional portfolio semantic and
 reuse only the Version 0.5 relative near-tie tolerance.
 
+**Approved disposition — resolved:** Version 0.6 intentionally uses highest
+portfolio utilization. It reuses `BOTTLENECK_NEAR_TIE_TOLERANCE` and
+`RANKING_TOLERANCE` but does not reuse Version 0.5's `bottleneckFor`.
+
 ### 1.4 Explicit zero working capital is new behavior
 
 Version 0.6 accepts zero working capital and specifies finite results for zero
@@ -108,6 +126,13 @@ or working-capital capacity that is not greater than zero.
 The Version 0.5 bottleneck helper therefore cannot be reused for portfolio
 capital utilization. Version 0.6 needs its own documented zero-capacity branch.
 This is an intentional difference, not a formula change.
+
+**Approved disposition — resolved:** Explicit zero is valid consistently for
+owner labor, every represented machine, and working capital. Zero required
+against zero available produces 0% and non-limiting. Positive required against
+zero available produces an over-capacity result with no finite ratio. Missing
+capacity returns structured unavailable analysis and is excluded from limiting
+resources.
 
 ### 1.5 Missing primary machine currently means unavailable machine metrics
 
@@ -120,6 +145,11 @@ That behavior is safe only after the explicit machine-free decision in section
 1.1 is resolved. It should not be implemented by converting an unavailable
 Version 0.5 metric to zero.
 
+**Approved disposition — resolved:** The portfolio projection recognizes absent
+`primaryMachine` only through the documented legacy compatibility inference and
+records that provenance. It does not reinterpret the Version 0.5 unavailable
+machine metric as numeric zero.
+
 ### 1.6 Zero-time machine profiles are valid today
 
 `validateProductionProfile` permits a primary machine with zero occupied
@@ -130,6 +160,10 @@ machine consuming zero capacity, malformed data, or equivalent to machine-free.
 **Decision needed:** retain current semantics and represent the machine with
 zero required minutes, or reject it for portfolio readiness. Retaining current
 semantics is least disruptive and preserves explicit zero.
+
+**Approved disposition — resolved:** A valid machine profile with zero occupied
+minutes remains a represented machine with zero demand. It is non-limiting and
+is neither missing nor machine-free.
 
 ### 1.7 Route configuration failure precedes authentication today
 
@@ -142,6 +176,11 @@ The Version 0.6 phrase “open `/plan` while authenticated” is compatible with
 claims check but does not state whether `/plan` must follow this
 configuration-first convention. It should.
 
+**Approved disposition — resolved:** The future route follows `/compare`:
+configuration first, verified server claims, encoded `/login?next=%2Fplan`
+redirect, server-only owned-product loading, Row Level Security, safe unavailable
+and service-error states, and no trust in client-provided ownership.
+
 ### 1.8 Version identifiers are ambiguous
 
 The input contract uses `portfolio-plan-v1`, while the engine architecture
@@ -151,6 +190,10 @@ defined and the names are easy to confuse.
 **Blocking decision:** define separate constants and locations, for example
 `PORTFOLIO_PLAN_INPUT_VERSION = "portfolio-plan-v1"` and
 `PORTFOLIO_ENGINE_VERSION = "portfolio-v1"`, and include both in the result.
+
+**Approved disposition — resolved:** The specification defines those two
+constants with separate request-contract and engine/result meanings. Every
+successful result includes both.
 
 ## 2. Calculations that would duplicate trusted helpers
 
@@ -185,61 +228,56 @@ leaders and per-product bottlenecks that Phase 1 does not need and requires a
 `generatedAt` value unrelated to a pure plan calculation. A shared exported
 projection is more explicit and easier to test without duplicating arithmetic.
 
-## 3. Missing decisions that block Phase 1
+## 3. Decision disposition and Phase 1 readiness
 
-### Must resolve before implementation
+All Phase 1 blocking decisions identified by the original audit are resolved:
 
-1. **Machine-free proof:** decide the compatibility meaning of an absent
-   `primaryMachine` in `production-profile-v1`.
-2. **Readiness matrix:** enumerate blocking and non-blocking compatibility/data
-   quality codes, especially `labor_profile_mismatch` and
-   `impossible_elapsed_time`.
-3. **Machine identity:** state whether equal machine keys across products always
-   represent one shared capacity pool. Define behavior when one key has
-   different historical labels, and when different keys have the same label.
-4. **Projection contract:** define the plan-ready product input/output shape,
-   readiness reason codes, provenance fields, and whether the engine accepts
-   `SavedProduct` records or already parsed immutable projections.
-5. **Engine failure contract:** distinguish thrown request-validation errors
-   from returned product-readiness failures and returned unavailable constraint
-   results.
-6. **Version constants:** resolve `portfolio-plan-v1` versus `portfolio-v1` and
-   specify the output version fields.
+1. **Machine-free compatibility — resolved.** Absent `primaryMachine` in
+   `production-profile-v1` is the legacy representation, with inference
+   provenance.
+2. **Readiness matrix — resolved.** The specification defines line-blocking,
+   positive-batch-only blocking, and visible non-blocking conditions.
+3. **Machine identity — resolved.** Equal keys share one pool; different keys
+   never merge; normalized-label conflicts for one key block positive batches;
+   source labels remain in provenance.
+4. **Projection contract — resolved.** The engine accepts immutable, parsed,
+   plan-ready projections and never falls back to raw JSON. Phase 1 exports or
+   extracts the shared Version 0.5 single-product projection.
+5. **Failure contract — resolved.** Request-validation failure,
+   product-readiness result, and unavailable optional analysis are separate
+   result classes. Non-finite derived arithmetic uses `non_finite_result` and
+   never returns partial totals.
+6. **Version constants — resolved.** `portfolio-plan-v1` identifies the input
+   contract and `portfolio-v1` identifies the engine/result contract.
+7. **Zero-time machines — resolved.** They remain represented and non-limiting.
+8. **Unknown machine capacity keys — resolved.** They are structured
+   request-validation errors.
+9. **Missing represented-machine capacity — resolved.** Economics remain
+   available; capacity analysis is unavailable with guidance and excluded from
+   limiting resources.
+10. **Machine labels — resolved.** All historical source labels are preserved;
+    normalization is limited to conflict detection and display resolution.
+11. **Period labels — resolved.** Labels are trimmed, must contain 1–80
+    characters, and are preserved in validated form.
+12. **Ordering — resolved.** Product input order, stable-key machine ordering,
+    code-priority readiness/warning ordering, resource tie ordering, and
+    deterministic explanation templates are specified.
+13. **Arithmetic and rounding — resolved.** No intermediate monetary rounding;
+    display formatting remains separate.
+14. **Overflow — resolved.** Non-finite multiplication or aggregation rejects
+    the entire request with `non_finite_result`.
+15. **Zero-batch selection — resolved.** Unready products may remain selected
+    only at zero batches; at least one ready positive-batch line is required for
+    results.
+16. **Minimum selection — resolved.** The engine requires at least two distinct
+    selected products.
 
-### Should resolve before implementation to prevent inconsistent tests
+The original item concerning unsaved-work protection remains a Phase 2
+interface decision and does not block the approved Phase 1 pure-engine scope.
 
-7. Define whether a valid primary-machine profile with zero occupied minutes is
-   retained as a represented, non-limiting machine.
-8. Define whether unknown machine-capacity keys are rejected, ignored with a
-   warning, or retained as unused constraints.
-9. Define whether every represented positive-time machine requires a supplied
-   capacity before results are shown, or whether its utilization is simply
-   unavailable.
-10. Define canonical machine-label selection for a shared key; historical labels
-    should remain visible in provenance even if one display label is selected.
-11. Define the period-label trim, empty, and maximum-length rules.
-12. Define duplicate detection and deterministic ordering for products,
-    machines, warnings, ties, and explanations.
-13. Define monetary aggregation and display precision. Recommended: calculate
-    with the stored finite numeric values without intermediate rounding and
-    round only in presentation using the existing comparison formatting
-    conventions.
-14. Define overflow policy for finite inputs whose multiplication or sum becomes
-    non-finite. Recommended: fail validation with a structured non-finite-result
-    reason rather than return partial totals.
-15. Define whether `plannedBatches: 0` lines must be fully ready. Recommended:
-    selected products still receive readiness results, but only ready products
-    may have positive batches; an unready zero-batch selection does not
-    invalidate totals.
-16. Define whether the engine enforces at least two selected products while a
-    separate projection helper may evaluate one product. Recommended: yes.
-17. Define unsaved-work protection scope for Phase 2: what counts as dirty and
-    whether browser refresh, internal navigation, reset, and sign-out receive the
-    same confirmation.
+## 4. Approved amendments to the specification
 
-## 4. Recommended amendments to the specification
-
-The following amendments should be made explicitly in a later approved edit to
+The original recommendations below were approved and incorporated into
 `VERSION-0.6-SPEC.md`:
 
 1. Add a **Version 0.5 readiness matrix**:
@@ -253,8 +291,8 @@ The following amendments should be made explicitly in a later approved edit to
 2. State that, for `production-profile-v1` compatibility only, absence of
    `primaryMachine` is treated as the historical machine-free representation.
    Also acknowledge that the current snapshot cannot prove the prior assistant
-   answer. If that inference is unacceptable, defer machine-free portfolio
-   eligibility until a separately approved versioned profile contract exists.
+   answer, and preserve inference provenance without introducing a snapshot
+   change.
 3. State that equal machine keys identify one shared capacity pool. Reject a
    shared key with conflicting normalized meaning unless a deterministic,
    user-visible resolution rule is approved. Preserve every source label in
@@ -264,11 +302,10 @@ The following amendments should be made explicitly in a later approved edit to
 5. Identify highest utilization as a Version 0.6 portfolio rule distinct from
    Version 0.5 complete-batch capacity. Reuse
    `BOTTLENECK_NEAR_TIE_TOLERANCE` and `RANKING_TOLERANCE`.
-6. Define the zero-capacity result for every resource, not only working capital.
-   If zero labor or machine capacity remains invalid, state that asymmetry
-   explicitly. Recommended: allow explicit zero for all capacities and apply the
-   same `0 required => 0%`, `positive required => over-capacity without a
-   ratio` result shape.
+6. Define the zero-capacity result for every resource, not only working capital:
+   allow explicit zero for all capacities and apply the same
+   `0 required => 0%`, `positive required => over-capacity without a ratio`
+   result shape.
 7. Replace “No duplicated pricing or comparison arithmetic” with an explicit
    requirement to consume a shared Version 0.5 product-metric projection and
    the exported Version 0.4 profile helpers listed in section 2.
@@ -284,8 +321,9 @@ The following amendments should be made explicitly in a later approved edit to
 11. State that all arithmetic uses validated finite stored numbers, performs no
     intermediate currency rounding, fails closed on non-finite results, and
     delegates display rounding to the existing formatting layer.
-12. Clarify zero-batch readiness, unknown machine constraint keys, period-label
-    validation, and deterministic output ordering as recommended in section 3.
+12. Define zero-batch readiness, reject unknown machine constraint keys,
+    validate trimmed 1–80 character period labels, and require deterministic
+    output ordering.
 
 ## 5. Proposed Phase 1 file and test plan
 
@@ -293,9 +331,9 @@ The following amendments should be made explicitly in a later approved edit to
 
 | File | Planned responsibility |
 | --- | --- |
-| `lib/product-comparison.ts` | Export the existing single-product trusted metric projection and Version 0.5 compatibility/data-quality evaluation without changing formulas or comparison results |
+| `lib/product-comparison.ts` | Export the existing single-product trusted metric projection, plan-ready compatibility provenance, and Version 0.5 compatibility/data-quality evaluation without changing formulas or comparison results |
 | `lib/product-comparison.test.ts` | Prove the exported projection is the same projection used by `compareSavedProducts`; retain all Version 0.5 regression behavior |
-| `lib/product-portfolio.ts` | Define `portfolio-plan-v1` and `portfolio-v1` contracts; build immutable plan-ready projections; validate requests; aggregate planned quantities; analyze capacities and demand; produce deterministic provenance and explanations |
+| `lib/product-portfolio.ts` | Accept immutable parsed plan-ready projections; define `portfolio-plan-v1` and `portfolio-v1` contracts; validate requests; evaluate readiness; aggregate planned quantities; analyze capacities and demand; produce deterministic provenance and explanations |
 | `lib/product-portfolio.test.ts` | Exhaustive Phase 1 unit and compatibility tests |
 
 No route, component, server action, persistence service, migration, database
@@ -341,7 +379,10 @@ type, calculation formula, or dependency belongs in Phase 1.
 5. **Constraints and demand**
    - missing constraints remain unavailable;
    - under, exactly at, and over labor/machine/capital capacity;
-   - approved explicit-zero behavior;
+   - consistent explicit-zero behavior for labor, every machine, and capital;
+   - missing represented-machine capacity preserves economics and returns
+     unavailable optional analysis;
+   - unknown machine constraint keys reject the request;
    - exact ties using numeric tolerance and relative near ties using the
      authoritative 5% constant;
    - utilization above 100% is not clamped;
@@ -380,8 +421,10 @@ type, calculation formula, or dependency belongs in Phase 1.
    supplied machine key is normalized from a label. Equal keys across products
    are not backed by a separate machine entity, so accidental cross-product key
    collisions are possible.
-7. **Absent machine state is ambiguous.** Existing snapshots have no explicit
-   marker separating confirmed machine-free products from incomplete profiles.
+7. **Absent machine provenance remains inferential.** Existing snapshots have no
+   explicit marker separating confirmed machine-free products from incomplete
+   profiles. The approved compatibility rule accepts absence as the historical
+   machine-free representation, but output must disclose that inference.
 8. **Malformed nested profiles invalidate the entire input snapshot.** A
    malformed production or cash profile causes `parsePricingInputSnapshot` to
    return `null`, making otherwise readable pricing inputs unavailable through
@@ -435,6 +478,37 @@ rejects zero working capital, and chooses primary resources by floored
 complete-batch capacity. Version 0.6 should own portfolio-level utilization
 while importing the shared tolerances and preserving the trust rules above.
 
+## 8. Remaining non-blocking implementation risks
+
+1. **Legacy machine-free inference can overstate readiness.** A historically
+   incomplete absent-machine profile is indistinguishable from a confirmed
+   machine-free profile. Required provenance and visible guidance mitigate but
+   cannot remove this limitation without a future versioned data decision.
+2. **Machine-key collisions are possible.** Keys are strings rather than
+   references to persisted machine entities. The approved normalized-label
+   conflict rule catches conflicting labels for one key, but identical labels
+   can still conceal an accidental collision.
+3. **Display resolution needs one deterministic template choice.** The
+   specification fixes ordering and provenance requirements but leaves the exact
+   canonical display-label template to implementation, provided all source
+   labels remain available and conflicts block positive batches.
+4. **Structured code taxonomy must remain stable.** Phase 1 must define the
+   concrete error, readiness, warning, and unavailable-analysis code unions in a
+   way that preserves the approved categories without conflating them.
+5. **Floating-point accumulation needs boundary tests.** The no-intermediate-
+   rounding policy is approved, but large finite values and long product lists
+   still require explicit overflow and reconciliation tests.
+6. **Shared projection extraction carries regression risk.** Refactoring
+   Version 0.5's internal projection must leave all comparison output, warning,
+   ranking, and bottleneck behavior unchanged.
+7. **Zero-capacity results need a ratio-free representation.** Positive demand
+   against zero capacity cannot use the normal finite utilization field, so the
+   result contract and presentation must clearly express over-capacity without
+   manufacturing a percentage.
+8. **Unsaved-work protection remains Phase 2 work.** Its dirty-state and
+   navigation semantics are intentionally outside Phase 1 and must be decided
+   before the interface is complete.
+
 ## Validation performed for this review
 
 - Confirmed the audit base: local `main` and `origin/main` both resolve to
@@ -447,3 +521,8 @@ while importing the shared tolerances and preserving the trust rules above.
 - Confirmed this review proposes documentation changes only and does not alter
   application code, formulas, migrations, generated database types, or
   dependencies.
+- Confirmed every original blocking finding has an approved disposition and is
+  retained with its audit evidence.
+- Confirmed Phase 1 is unblocked only for the pure-engine, shared-projection,
+  contract, readiness, aggregation, capacity, demand, provenance, warning, and
+  unit-test scope defined by the amended specification.
