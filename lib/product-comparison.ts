@@ -112,6 +112,34 @@ export type ProductComparisonResult = {
   metrics: ProductComparisonMetrics;
 };
 
+export type TrustedMachineProjection = {
+  key: string;
+  label: string;
+  occupiedMinutesPerBatch: number;
+};
+
+export type TrustedProductProjection = {
+  productId: string;
+  productName: string;
+  metrics: ProductComparisonMetrics;
+  compatibilityWarnings: CompatibilityWarning[];
+  profile: {
+    unitsPerBatch?: number;
+    fixedUpfrontCashCostPerBatch?: number;
+    machine?: TrustedMachineProjection;
+    machineFree: boolean;
+  };
+  provenance: {
+    pricingInputSnapshotVersion: string | null;
+    calculationSnapshotVersion: string | null;
+    formulaVersion: string;
+    productionProfileVersion: string | null;
+    cashProfileVersion: string | null;
+    machineInterpretation: "represented" | "legacy_absent_machine" | "unavailable";
+    machineInterpretationSource: string;
+  };
+};
+
 export type ComparisonConstraints = {
   availableLaborMinutes?: number;
   availableMachineMinutesByKey?: Readonly<Record<string, number>>;
@@ -493,6 +521,52 @@ function warningsFor(product: SavedProduct): CompatibilityWarning[] {
   return warnings;
 }
 
+export function projectSavedProduct(product: SavedProduct): TrustedProductProjection {
+  const profiles = profileFor(product);
+  const production = profiles.production;
+  const cash = profiles.cash;
+  const machineInterpretation = production?.primaryMachine
+    ? "represented"
+    : production
+      ? "legacy_absent_machine"
+      : "unavailable";
+  return structuredClone({
+    productId: product.id,
+    productName: product.name,
+    metrics: buildMetrics(product),
+    compatibilityWarnings: warningsFor(product),
+    profile: {
+      ...(production ? { unitsPerBatch: production.unitsPerBatch } : {}),
+      ...(cash?.fixedUpfrontCashCostPerBatch !== undefined
+        ? { fixedUpfrontCashCostPerBatch: cash.fixedUpfrontCashCostPerBatch }
+        : {}),
+      ...(production?.primaryMachine
+        ? {
+            machine: {
+              key: production.primaryMachine.key,
+              label: production.primaryMachine.label,
+              occupiedMinutesPerBatch: production.primaryMachine.occupiedMinutesPerBatch,
+            },
+          }
+        : {}),
+      machineFree: machineInterpretation === "legacy_absent_machine",
+    },
+    provenance: {
+      pricingInputSnapshotVersion: product.pricingInputs?.schemaVersion ?? null,
+      calculationSnapshotVersion: product.calculationSnapshot?.schemaVersion ?? null,
+      formulaVersion: product.formulaVersion,
+      productionProfileVersion: production?.schemaVersion ?? null,
+      cashProfileVersion: cash?.schemaVersion ?? null,
+      machineInterpretation,
+      machineInterpretationSource: machineInterpretation === "represented"
+        ? "production-profile-v1.primaryMachine"
+        : machineInterpretation === "legacy_absent_machine"
+          ? "production-profile-v1 absent primaryMachine compatibility inference"
+          : "supported production profile unavailable",
+    },
+  });
+}
+
 function productNames(products: ProductComparisonResult[], ids: string[]) {
   return ids.map((id) => products.find((product) => product.productId === id)?.productName ?? id).join(" and ");
 }
@@ -537,10 +611,11 @@ export function compareSavedProducts(request: ComparisonRequest): ProductCompari
   for (const [key, value] of Object.entries(constraints?.availableMachineMinutesByKey ?? {})) {
     if (!validateCapacity(value)) throw new Error(`Machine capacity for ${key} must be finite and greater than zero.`);
   }
-  const products = request.products.map((product) => ({ productId: product.id, productName: product.name, metrics: buildMetrics(product) }));
+  const projections = request.products.map(projectSavedProduct);
+  const products = projections.map(({ productId, productName, metrics }) => ({ productId, productName, metrics }));
   const categories = categoryLeaders(products);
   const batch = buildBatchEconomics(products);
-  const warnings = request.products.flatMap(warningsFor);
+  const warnings = projections.flatMap(({ compatibilityWarnings }) => compatibilityWarnings);
   const bottlenecksByProduct = Object.fromEntries(request.products.map((product, index) => [product.id, bottleneckFor(product, products[index].metrics, request.constraints)]));
   return structuredClone({
     engineVersion: COMPARISON_ENGINE_VERSION,
