@@ -54,9 +54,6 @@ export type PortfolioRequestErrorCode =
   | "invalid_demand_ceiling"
   | "invalid_capacity"
   | "unknown_machine_capacity_key"
-  | "conflicting_machine_labels"
-  | "no_ready_positive_batches"
-  | "positive_batches_for_unready_product"
   | "non_finite_result";
 
 export type PortfolioRequestError = {
@@ -83,6 +80,7 @@ export type PortfolioReadinessReasonCode =
   | "missing_fixed_batch_cash"
   | "missing_stored_metric"
   | "labor_profile_mismatch"
+  | "machine_label_conflict"
   | "invalid_machine";
 
 export type PortfolioReadinessReason = {
@@ -156,6 +154,8 @@ export type PortfolioDemandAnalysis =
 export type PortfolioProductLine = {
   productId: string;
   productName: string;
+  plannedBatches: number;
+  demandCeilingUnits?: number;
   readiness: PortfolioProductReadiness;
   provenance: PortfolioProductProvenance;
   economics: PortfolioLineEconomics | null;
@@ -244,7 +244,39 @@ export type PortfolioInvalidResult = {
   errors: PortfolioRequestError[];
 };
 
-export type PortfolioEngineResult = PortfolioSuccessResult | PortfolioInvalidResult;
+export type PortfolioReadinessBlockCode =
+  | "positive_batches_for_unready_product"
+  | "no_ready_positive_batches";
+
+export type PortfolioReadinessBlockReason = {
+  code: PortfolioReadinessBlockCode;
+  message: string;
+  productId?: string;
+};
+
+export type PortfolioBlockedProductLine = Pick<
+  PortfolioProductLine,
+  "productId" | "productName" | "plannedBatches" | "demandCeilingUnits" | "readiness" | "provenance"
+>;
+
+export type PortfolioReadinessBlockedResult = {
+  status: "readiness_blocked";
+  planInputVersion: PortfolioPlanInputVersion;
+  engineVersion: PortfolioEngineVersion;
+  period: {
+    type: PlanningPeriodType;
+    label: string;
+  };
+  products: PortfolioBlockedProductLine[];
+  warnings: PortfolioWarning[];
+  reasons: PortfolioReadinessBlockReason[];
+  explanations: string[];
+};
+
+export type PortfolioEngineResult =
+  | PortfolioSuccessResult
+  | PortfolioReadinessBlockedResult
+  | PortfolioInvalidResult;
 
 export type PortfolioEngineRequest = {
   input: unknown;
@@ -265,9 +297,6 @@ const requestErrorPriority: readonly PortfolioRequestErrorCode[] = [
   "invalid_demand_ceiling",
   "invalid_capacity",
   "unknown_machine_capacity_key",
-  "conflicting_machine_labels",
-  "positive_batches_for_unready_product",
-  "no_ready_positive_batches",
   "non_finite_result",
 ];
 
@@ -287,6 +316,7 @@ const readinessPriority: readonly PortfolioReadinessReasonCode[] = [
   "missing_fixed_batch_cash",
   "missing_stored_metric",
   "labor_profile_mismatch",
+  "machine_label_conflict",
   "invalid_machine",
 ];
 
@@ -425,12 +455,31 @@ function requireMetric(
   if (metric.status === "unavailable") reasons.push({ code, message, ...(field ? { field } : {}) });
 }
 
-function projectionProvenance(projection: TrustedProductProjection): PortfolioProductProvenance {
+function projectionProvenance(
+  projection: TrustedProductProjection,
+  machineSourceLabels: readonly string[] = projection.profile.machine ? [projection.profile.machine.label] : []
+): PortfolioProductProvenance {
   return {
     ...structuredClone(projection.provenance),
     machineFreeInference: projection.provenance.machineInterpretation === "legacy_absent_machine",
-    machineSourceLabels: projection.profile.machine ? [projection.profile.machine.label] : [],
+    machineSourceLabels: [...machineSourceLabels],
   };
+}
+
+function withReadinessReason(
+  readiness: PortfolioProductReadiness,
+  reason: PortfolioReadinessReason
+): PortfolioProductReadiness {
+  const reasons = [...readiness.reasons, reason].sort((a, b) =>
+    readinessPriority.indexOf(a.code) - readinessPriority.indexOf(b.code) ||
+    a.code.localeCompare(b.code) ||
+    (a.field ?? "").localeCompare(b.field ?? ""));
+  return { ...readiness, status: "unready", reasons };
+}
+
+function sortedWarnings(readiness: readonly PortfolioProductReadiness[]): PortfolioWarning[] {
+  return readiness.flatMap((result) => result.warnings)
+    .sort((a, b) => a.code.localeCompare(b.code) || a.productId.localeCompare(b.productId));
 }
 
 function multiply(a: number, b: number): number {
@@ -808,9 +857,13 @@ export function planPortfolio(request: PortfolioEngineRequest): PortfolioEngineR
     }
   }
   const labelsByKey = new Map<string, Map<string, string[]>>();
+  const sourceLabelsByKey = new Map<string, string[]>();
   for (const projection of selected) {
     const machine = projection.profile.machine;
     if (!machine) continue;
+    const sourceLabels = sourceLabelsByKey.get(machine.key) ?? [];
+    if (!sourceLabels.includes(machine.label)) sourceLabels.push(machine.label);
+    sourceLabelsByKey.set(machine.key, sourceLabels);
     const normalized = normalizeMachineKey(machine.label);
     if (!normalized) continue;
     const labels = labelsByKey.get(machine.key) ?? new Map<string, string[]>();
@@ -819,24 +872,68 @@ export function planPortfolio(request: PortfolioEngineRequest): PortfolioEngineR
     labels.set(normalized, products);
     labelsByKey.set(machine.key, labels);
   }
-  for (const [key, labels] of [...labelsByKey.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    if (labels.size > 1) {
-      errors.push(error("conflicting_machine_labels", `Machine key ${key} has conflicting historical labels.`, { machineKey: key }));
-    }
-  }
-
-  const readiness = selected.map(readinessFor);
+  const conflictingMachineKeys = new Set(
+    [...labelsByKey.entries()].filter(([, labels]) => labels.size > 1).map(([key]) => key)
+  );
+  const readiness = selected.map((projection) => {
+    const result = readinessFor(projection);
+    const machineKey = projection.profile.machine?.key;
+    return machineKey && conflictingMachineKeys.has(machineKey)
+      ? withReadinessReason(result, {
+          code: "machine_label_conflict",
+          message: `Machine key ${machineKey} has conflicting historical labels across selected products.`,
+          field: "primaryMachine.label",
+        })
+      : result;
+  });
+  const readinessBlockReasons: PortfolioReadinessBlockReason[] = [];
   for (const [index, line] of input.products.entries()) {
     if (line.plannedBatches > 0 && readiness[index].status === "unready") {
-      errors.push(error("positive_batches_for_unready_product", `${selected[index].productName} is not ready for positive planned batches.`, {
-        path: `products.${index}.plannedBatches`, productId: line.savedProductId,
-      }));
+      readinessBlockReasons.push({
+        code: "positive_batches_for_unready_product",
+        message: `${selected[index].productName} is not ready for positive planned batches.`,
+        productId: line.savedProductId,
+      });
     }
   }
   if (!input.products.some((line, index) => line.plannedBatches > 0 && readiness[index].status === "ready")) {
-    errors.push(error("no_ready_positive_batches", "At least one ready product must have positive planned batches.", { path: "products" }));
+    readinessBlockReasons.push({
+      code: "no_ready_positive_batches",
+      message: "At least one ready product must have positive planned batches.",
+    });
   }
   if (errors.length) return invalid(errors);
+  if (readinessBlockReasons.length) {
+    const products = input.products.map((line, index): PortfolioBlockedProductLine => ({
+      productId: selected[index].productId,
+      productName: selected[index].productName,
+      plannedBatches: line.plannedBatches,
+      ...(line.demandCeilingUnits !== undefined ? { demandCeilingUnits: line.demandCeilingUnits } : {}),
+      readiness: readiness[index],
+      provenance: projectionProvenance(
+        selected[index],
+        selected[index].profile.machine
+          ? sourceLabelsByKey.get(selected[index].profile.machine.key)
+          : undefined
+      ),
+    }));
+    const warnings = sortedWarnings(readiness);
+    return structuredClone({
+      status: "readiness_blocked",
+      planInputVersion: PORTFOLIO_PLAN_INPUT_VERSION,
+      engineVersion: PORTFOLIO_ENGINE_VERSION,
+      period: input.period,
+      products,
+      warnings,
+      reasons: readinessBlockReasons,
+      explanations: [
+        ...readinessBlockReasons.map((reason) => reason.message),
+        ...(warnings.length
+          ? [`${warnings.length} non-blocking data-quality warning${warnings.length === 1 ? "" : "s"} remain visible.`]
+          : []),
+      ],
+    });
+  }
 
   try {
     const totals = emptyTotals();
@@ -853,16 +950,22 @@ export function planPortfolio(request: PortfolioEngineRequest): PortfolioEngineR
       return {
         productId: selected[index].productId,
         productName: selected[index].productName,
+        plannedBatches: line.plannedBatches,
+        ...(line.demandCeilingUnits !== undefined ? { demandCeilingUnits: line.demandCeilingUnits } : {}),
         readiness: readiness[index],
-        provenance: projectionProvenance(selected[index]),
+        provenance: projectionProvenance(
+          selected[index],
+          selected[index].profile.machine
+            ? sourceLabelsByKey.get(selected[index].profile.machine.key)
+            : undefined
+        ),
         economics,
         contributions: economics ? contributionShares(economics, totals) : null,
         demand: demandAnalysis(line.demandCeilingUnits, economics, line.plannedBatches, selected[index].profile.unitsPerBatch),
       };
     });
     const capacity = capacityAnalysis(totals, selected, input);
-    const warnings = products.flatMap(({ readiness: result }) => result.warnings)
-      .sort((a, b) => a.code.localeCompare(b.code) || a.productId.localeCompare(b.productId));
+    const warnings = sortedWarnings(readiness);
     return structuredClone({
       status: "success",
       planInputVersion: PORTFOLIO_PLAN_INPUT_VERSION,

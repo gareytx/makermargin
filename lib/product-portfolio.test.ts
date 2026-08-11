@@ -116,13 +116,23 @@ function validResult(
 ) {
   const result = planPortfolio({ input: suppliedInput, products: suppliedProjections });
   expect(result.status).toBe("success");
-  if (result.status !== "success") throw new Error(JSON.stringify(result.errors));
+  if (result.status !== "success") throw new Error(JSON.stringify(result));
   return result;
 }
 
 function errorCodes(value: ReturnType<typeof planPortfolio>) {
   expect(value.status).toBe("invalid");
   return value.status === "invalid" ? value.errors.map(({ code }) => code) : [];
+}
+
+function blockedResult(
+  suppliedInput: PortfolioPlanInput,
+  suppliedProjections = projections(savedProduct("a"), savedProduct("b"))
+) {
+  const result = planPortfolio({ input: suppliedInput, products: suppliedProjections });
+  expect(result.status).toBe("readiness_blocked");
+  if (result.status !== "readiness_blocked") throw new Error(JSON.stringify(result));
+  return result;
 }
 
 describe("trusted projection readiness and provenance", () => {
@@ -325,7 +335,7 @@ describe("request validation", () => {
     expect(validResult(input(undefined, { machineMinutesByKey: {} })).status).toBe("success");
   });
 
-  it("rejects unknown machine keys and conflicting labels for one shared key", () => {
+  it("rejects unknown machine keys but treats conflicting labels as product readiness", () => {
     expect(errorCodes(planPortfolio({
       input: input(undefined, { machineMinutesByKey: { unknown: 10 } }),
       products: ready(),
@@ -343,7 +353,16 @@ describe("request validation", () => {
         }),
       })
     );
-    expect(errorCodes(planPortfolio({ input: input(), products: conflicting }))).toContain("conflicting_machine_labels");
+    const result = blockedResult(input(), conflicting);
+    expect(result.reasons.map(({ code }) => code)).toEqual([
+      "positive_batches_for_unready_product",
+      "positive_batches_for_unready_product",
+      "no_ready_positive_batches",
+    ]);
+    for (const line of result.products) {
+      expect(line.readiness.reasons).toContainEqual(expect.objectContaining({ code: "machine_label_conflict" }));
+      expect(line.provenance.machineSourceLabels).toEqual(["Laser A", "Different Laser"]);
+    }
   });
 
   it("does not merge different keys whose labels normalize identically", () => {
@@ -363,17 +382,89 @@ describe("request validation", () => {
     expect(validResult(input(), separate).capacity.machines.map(({ key }) => key)).toEqual(["laser-a", "laser-b"]);
   });
 
-  it("rejects all-zero plans and positive batches assigned to an unready product", () => {
-    expect(errorCodes(planPortfolio({
-      input: input([{ savedProductId: "a", plannedBatches: 0 }, { savedProductId: "b", plannedBatches: 0 }]),
-      products: ready(),
-    }))).toContain("no_ready_positive_batches");
+  it("readiness-blocks all-zero plans and positive batches assigned to an unready product", () => {
+    const zero = blockedResult(
+      input([{ savedProductId: "a", plannedBatches: 0 }, { savedProductId: "b", plannedBatches: 0 }]),
+      ready()
+    );
+    expect(zero.reasons.map(({ code }) => code)).toEqual(["no_ready_positive_batches"]);
     const legacy = projectSavedProduct(savedProduct("legacy", { v1: true }));
-    const result = planPortfolio({
-      input: input([{ savedProductId: "legacy", plannedBatches: 1 }, { savedProductId: "b", plannedBatches: 1 }]),
-      products: [legacy, projectSavedProduct(savedProduct("b"))],
+    const result = blockedResult(
+      input([{ savedProductId: "legacy", plannedBatches: 1 }, { savedProductId: "b", plannedBatches: 1 }]),
+      [legacy, projectSavedProduct(savedProduct("b"))]
+    );
+    expect(result.reasons.map(({ code }) => code)).toEqual(["positive_batches_for_unready_product"]);
+  });
+
+  it("preserves validated scenario context without partial calculations when readiness is blocked", () => {
+    const quality = projectSavedProduct(savedProduct("quality", {
+      pricingLaborMinutes: 99,
+      production: production({ totalElapsedMinutesPerBatch: 39 }),
+    }));
+    const supplied = input([
+      { savedProductId: "b", plannedBatches: 0, demandCeilingUnits: 12 },
+      { savedProductId: "quality", plannedBatches: 3, demandCeilingUnits: 7 },
+    ]);
+    const result = blockedResult(supplied, [quality, projectSavedProduct(savedProduct("b"))]);
+
+    expect(result).toMatchObject({
+      planInputVersion: PORTFOLIO_PLAN_INPUT_VERSION,
+      engineVersion: PORTFOLIO_ENGINE_VERSION,
+      period: { type: "month", label: "August launch" },
     });
-    expect(errorCodes(result)).toContain("positive_batches_for_unready_product");
+    expect(result.products.map(({ productId, plannedBatches, demandCeilingUnits }) => ({
+      productId, plannedBatches, demandCeilingUnits,
+    }))).toEqual([
+      { productId: "b", plannedBatches: 0, demandCeilingUnits: 12 },
+      { productId: "quality", plannedBatches: 3, demandCeilingUnits: 7 },
+    ]);
+    expect(result.products[1].readiness.reasons).toContainEqual(expect.objectContaining({ code: "labor_profile_mismatch" }));
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: "impossible_elapsed_time", productId: "quality" }),
+    ]);
+    expect(result.products[1].provenance).toMatchObject({ formulaVersion: "pricing-v1" });
+    expect(result).not.toHaveProperty("totals");
+    expect(result).not.toHaveProperty("capacity");
+    for (const line of result.products) {
+      expect(line).not.toHaveProperty("economics");
+      expect(line).not.toHaveProperty("contributions");
+      expect(line).not.toHaveProperty("demand");
+    }
+  });
+
+  it("allows a machine-label-conflicted zero-batch line beside a ready positive-batch line", () => {
+    const conflicted = projections(
+      savedProduct("conflicted"),
+      savedProduct("history", {
+        production: production({
+          primaryMachine: {
+            key: "laser-a",
+            label: "Historical Laser",
+            occupiedMinutesPerBatch: 40,
+            supervisedMinutesPerBatch: 4,
+          },
+        }),
+      }),
+      savedProduct("ready", {
+        production: production({
+          primaryMachine: {
+            key: "laser-ready",
+            label: "Ready Laser",
+            occupiedMinutesPerBatch: 40,
+            supervisedMinutesPerBatch: 4,
+          },
+        }),
+      })
+    );
+    const result = validResult(input([
+      { savedProductId: "conflicted", plannedBatches: 0 },
+      { savedProductId: "history", plannedBatches: 0 },
+      { savedProductId: "ready", plannedBatches: 1 },
+    ]), conflicted);
+    expect(result.products[0].readiness.reasons).toContainEqual(expect.objectContaining({ code: "machine_label_conflict" }));
+    expect(result.products[1].readiness.reasons).toContainEqual(expect.objectContaining({ code: "machine_label_conflict" }));
+    expect(result.products[2].readiness.status).toBe("ready");
+    expect(result.totals.plannedBatches).toBe(1);
   });
 
   it("fails closed with non_finite_result when derived arithmetic overflows", () => {

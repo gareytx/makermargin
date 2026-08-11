@@ -7,6 +7,7 @@ import {
   COMPARISON_ENGINE_VERSION,
   RANKING_TOLERANCE,
   compareSavedProducts,
+  projectSavedProduct,
   type ComparisonConstraints,
 } from "./product-comparison";
 import {
@@ -174,7 +175,7 @@ describe("comparison-v1 core and profile metrics", () => {
   });
 
   it("never derives elapsed time by summing component durations", () => {
-    const profile = production();
+    const profile: PricingInputSnapshotV2["productionProfile"] = production();
     delete profile.totalElapsedMinutesPerBatch;
     const metrics = compare([product("a", "A", { production: profile, cash: cash() }), product("b", "B")]).products[0].metrics;
     expect(metrics.totalElapsedMinutesPerBatch).toMatchObject({ status: "unavailable", reason: { code: "missing_elapsed_time" } });
@@ -390,6 +391,34 @@ describe("runtime bottlenecks and explanations", () => {
 });
 
 describe("purity", () => {
+  it("builds comparison output from the exported detached trusted projection", () => {
+    const item = product("a", "A", { production: production(), cash: cash() });
+    const projection = projectSavedProduct(item);
+    const output = compareSavedProducts({ products: [item], generatedAt });
+    expect(output.products[0]).toEqual({
+      productId: projection.productId,
+      productName: projection.productName,
+      metrics: projection.metrics,
+    });
+    expect(output.compatibilityWarnings).toEqual(projection.compatibilityWarnings);
+    expect(projection.profile).toMatchObject({
+      unitsPerBatch: 4,
+      fixedUpfrontCashCostPerBatch: 6,
+      machine: { key: "laser-a", label: "Laser A", occupiedMinutesPerBatch: 40 },
+      machineFree: false,
+    });
+    expect(projection.provenance).toMatchObject({
+      pricingInputSnapshotVersion: "pricing-input-v2",
+      calculationSnapshotVersion: "calculation-snapshot-v1",
+      formulaVersion: "pricing-v1",
+      productionProfileVersion: "production-profile-v1",
+      cashProfileVersion: "cash-profile-v1",
+      machineInterpretation: "represented",
+    });
+    projection.productName = "Changed";
+    expect(item.name).toBe("A");
+  });
+
   it("does not mutate products or constraints and returns detached output", () => {
     const products = [product("a", "A", { production: production(), cash: cash() }), product("b", "B", { production: production(), cash: cash() })];
     const supplied = structuredClone(constraints);
