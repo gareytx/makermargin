@@ -733,7 +733,7 @@ function explanationsFor(
   const demandRisk = lines.filter(({ demand }) => demand?.status === "available" && demand.state === "excess");
   if (demandRisk.length) explanations.push(`${demandRisk.length} product line${demandRisk.length === 1 ? " exceeds" : "s exceed"} user-supplied demand ceilings.`);
   const warnings = lines.reduce((count, line) => count + line.readiness.warnings.length, 0);
-  if (warnings) explanations.push(`${warnings} non-blocking data-quality warning${warnings === 1 ? "" : "s"} remain visible.`);
+  if (warnings) explanations.push(`${warnings} non-blocking data-quality warning${warnings === 1 ? " remains" : "s remain"} visible.`);
   return explanations;
 }
 
@@ -929,7 +929,7 @@ export function planPortfolio(request: PortfolioEngineRequest): PortfolioEngineR
       explanations: [
         ...readinessBlockReasons.map((reason) => reason.message),
         ...(warnings.length
-          ? [`${warnings.length} non-blocking data-quality warning${warnings.length === 1 ? "" : "s"} remain visible.`]
+          ? [`${warnings.length} non-blocking data-quality warning${warnings.length === 1 ? " remains" : "s remain"} visible.`]
           : []),
       ],
     });
