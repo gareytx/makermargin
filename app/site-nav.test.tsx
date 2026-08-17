@@ -12,6 +12,7 @@ describe("SiteNav comparison access", () => {
     mocks.subscribe.mockReturnValue({ data: { subscription: { unsubscribe: mocks.unsubscribe } } });
     render(<SiteNav />);
     await waitFor(() => expect(screen.getByRole("link", { name: "Compare products" })).toBeTruthy());
+    expect(screen.getByRole("link", { name: "Plan production" }).getAttribute("href")).toBe("/plan");
   });
 
   it("does not show Compare products to anonymous users", async () => {
@@ -20,5 +21,6 @@ describe("SiteNav comparison access", () => {
     render(<SiteNav />);
     await waitFor(() => expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy());
     expect(screen.queryByRole("link", { name: "Compare products" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Plan production" })).toBeNull();
   });
 });

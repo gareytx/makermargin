@@ -23,6 +23,7 @@ export function SiteNav() {
         <>
           <Link className="text-emerald-400" href="/products">Saved products</Link>
           <Link className="text-emerald-400" href="/compare">Compare products</Link>
+          <Link className="text-emerald-400" href="/plan">Plan production</Link>
           <button className="text-slate-300 hover:text-white" type="button" onClick={async () => {
             await signOutAction();
             window.location.assign("/");
