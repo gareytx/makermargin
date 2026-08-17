@@ -665,6 +665,33 @@ describe("calculations, aggregation, capacity, and demand", () => {
     ]));
     expect(multiple.explanations).toContain("2 product lines exceed user-supplied demand ceilings.");
   });
+
+  it("uses singular and plural grammar for data-quality warning explanations", () => {
+    const impossibleElapsed = production({ totalElapsedMinutesPerBatch: 20 });
+    const single = validResult(
+      input(),
+      projections(savedProduct("a", { production: impossibleElapsed }), savedProduct("b"))
+    );
+    expect(single.explanations).toContain("1 non-blocking data-quality warning remains visible.");
+
+    const multiple = validResult(
+      input(),
+      projections(
+        savedProduct("a", { production: impossibleElapsed }),
+        savedProduct("b", { production: impossibleElapsed })
+      )
+    );
+    expect(multiple.explanations).toContain("2 non-blocking data-quality warnings remain visible.");
+
+    const blocked = blockedResult(
+      input([
+        { savedProductId: "a", plannedBatches: 0 },
+        { savedProductId: "b", plannedBatches: 0 },
+      ]),
+      projections(savedProduct("a", { production: impossibleElapsed }), savedProduct("b"))
+    );
+    expect(blocked.explanations).toContain("1 non-blocking data-quality warning remains visible.");
+  });
 });
 
 describe("purity and determinism", () => {
