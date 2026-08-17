@@ -87,6 +87,16 @@ describe("PlanWorkspace engine states and results", () => {
     expect(screen.queryByRole("heading", { name: "Portfolio totals" })).toBeNull();
   });
 
+  it("renders repeated readiness-reason codes without duplicate React keys", () => {
+    const missingStoredMetrics = saved("missing", "Missing stored metrics");
+    missingStoredMetrics.calculationSnapshot = null;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    setup([missingStoredMetrics, saved("ready", "Ready")]);
+    selectAll();
+    expect(screen.getAllByText(/Stored .* is required\./)).toHaveLength(4);
+    expect(consoleError.mock.calls.flat().join(" ")).not.toContain("Encountered two children with the same key");
+  });
+
   it("renders totals, capacity, demand, explanations, readiness, and ordered contributions", () => {
     setup(); selectAll();
     fireEvent.change(screen.getByLabelText("Period type"), { target: { value: "event" } });
