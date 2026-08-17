@@ -651,6 +651,20 @@ describe("calculations, aggregation, capacity, and demand", () => {
     expect(result.products[3].demand).toBeNull();
     expect(result.totals.revenue).toBe(800);
   });
+
+  it("uses singular and plural grammar for demand-risk explanations", () => {
+    const single = validResult(input([
+      { savedProductId: "a", plannedBatches: 2, demandCeilingUnits: 6 },
+      { savedProductId: "b", plannedBatches: 1 },
+    ]));
+    expect(single.explanations).toContain("1 product line exceeds user-supplied demand ceilings.");
+
+    const multiple = validResult(input([
+      { savedProductId: "a", plannedBatches: 2, demandCeilingUnits: 6 },
+      { savedProductId: "b", plannedBatches: 1, demandCeilingUnits: 2 },
+    ]));
+    expect(multiple.explanations).toContain("2 product lines exceed user-supplied demand ceilings.");
+  });
 });
 
 describe("purity and determinism", () => {

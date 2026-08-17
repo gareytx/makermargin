@@ -6,11 +6,11 @@ import { createCurrentSnapshots, PRICING_INPUT_SNAPSHOT_VERSION_V1 } from "@/lib
 import type { SavedProduct } from "@/lib/saved-products";
 import { PlanWorkspace } from "./plan-workspace";
 
-function saved(id: string, name: string, options: { historical?: boolean; machineKey?: string; machineLabel?: string; machineMinutes?: number } = {}): SavedProduct {
+function saved(id: string, name: string, options: { historical?: boolean; machineKey?: string; machineLabel?: string; machineMinutes?: number; elapsedMinutes?: number } = {}): SavedProduct {
   const snapshots = createCurrentSnapshots({ ...customProductTemplate.values, laborMinutes: 8 }, "2026-08-10T12:00:00Z", {
     productionProfile: {
       schemaVersion: PRODUCTION_PROFILE_VERSION, unitsPerBatch: 4, setupLaborMinutesPerBatch: 8,
-      activeLaborMinutesPerUnit: 3, finishingLaborMinutesPerUnit: 2, totalElapsedMinutesPerBatch: 75,
+      activeLaborMinutesPerUnit: 3, finishingLaborMinutesPerUnit: 2, totalElapsedMinutesPerBatch: options.elapsedMinutes ?? 75,
       primaryMachine: { key: options.machineKey ?? "laser-a", label: options.machineLabel ?? "Laser A", occupiedMinutesPerBatch: options.machineMinutes ?? 40, supervisedMinutesPerBatch: 4 },
     },
     cashProfile: { schemaVersion: CASH_PROFILE_VERSION, cashCostPerSale: 12, upfrontCashCostPerUnit: 5, fixedUpfrontCashCostPerBatch: 6, fixedProductLaunchCost: 100 },
@@ -25,7 +25,7 @@ function selectAll() { fireEvent.click(screen.getByRole("button", { name: "Selec
 function fillValidPlan() {
   selectAll();
   fireEvent.change(screen.getByLabelText("Period label"), { target: { value: "August launch" } });
-  fireEvent.change(screen.getByLabelText("Planned complete batches", { selector: "#batches-a" }), { target: { value: "2" } });
+  fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-a" }), { target: { value: "2" } });
   fireEvent.click(screen.getByRole("button", { name: "Calculate plan" }));
 }
 function expectCalculationInvalidated() {
@@ -52,9 +52,15 @@ describe("PlanWorkspace setup", () => {
   it("shows whole-batch and optional demand inputs only for selected products", () => {
     setup();
     fireEvent.click(screen.getByRole("checkbox", { name: /First Product/ }));
-    expect(screen.getAllByLabelText("Planned complete batches")).toHaveLength(1);
-    expect(screen.getByLabelText("Demand ceiling (optional)").getAttribute("step")).toBe("1");
-    expect(screen.getByText("4 sellable products per batch")).toBeTruthy();
+    const batches = screen.getByLabelText("Planned production: complete batches");
+    const demand = screen.getByLabelText("Demand ceiling assumption (optional)");
+    expect(screen.getAllByLabelText("Planned production: complete batches")).toHaveLength(1);
+    expect(demand.getAttribute("step")).toBe("1");
+    expect(screen.getByText(/whole representative production batches to make/i)).toBeTruthy();
+    expect(screen.getByText(/sellable units, not batches/i)).toBeTruthy();
+    expect(screen.getByText(/not a forecast/i)).toBeTruthy();
+    expect(batches.getAttribute("aria-describedby")).toBe("batches-a-description");
+    expect(demand.getAttribute("aria-describedby")).toBe("demand-a-description");
   });
 
   it("deduplicates shared machines by stable key while preserving labels", () => {
@@ -79,7 +85,7 @@ describe("PlanWorkspace engine states and results", () => {
     setup([saved("legacy", "Historical", { historical: true }), saved("ready", "Ready")]);
     selectAll();
     fireEvent.change(screen.getByLabelText("Period label"), { target: { value: "Market week" } });
-    fireEvent.change(screen.getAllByLabelText("Planned complete batches")[0], { target: { value: "1" } });
+    fireEvent.change(screen.getAllByLabelText("Planned production: complete batches")[0], { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "Calculate plan" }));
     expect(screen.getByRole("heading", { name: "Plan is blocked by product readiness" })).toBeTruthy();
     expect(screen.getAllByText(/Historical is not ready/).length).toBeGreaterThan(0);
@@ -101,8 +107,8 @@ describe("PlanWorkspace engine states and results", () => {
     setup(); selectAll();
     fireEvent.change(screen.getByLabelText("Period type"), { target: { value: "event" } });
     fireEvent.change(screen.getByLabelText("Period label"), { target: { value: " Fall Market " } });
-    fireEvent.change(screen.getByLabelText("Planned complete batches", { selector: "#batches-a" }), { target: { value: "2" } });
-    fireEvent.change(screen.getByLabelText("Demand ceiling (optional)", { selector: "#demand-a" }), { target: { value: "5" } });
+    fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-a" }), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Demand ceiling assumption (optional)", { selector: "#demand-a" }), { target: { value: "5" } });
     fireEvent.change(screen.getByLabelText("Available owner labor hours"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("Available working capital ($)"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("Available hours for Laser A"), { target: { value: "1" } });
@@ -125,11 +131,53 @@ describe("PlanWorkspace engine states and results", () => {
     expect(screen.getByText(/No limiting resource can be identified/)).toBeTruthy();
   });
 
+  it("shows only additional resources in the near-tie sentence", () => {
+    setup(); selectAll();
+    fireEvent.change(screen.getByLabelText("Period label"), { target: { value: "Capacity check" } });
+    fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-a" }), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Available owner labor hours"), { target: { value: "1.0666666666666667" } });
+    fireEvent.change(screen.getByLabelText("Available hours for Laser A"), { target: { value: "1.4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Calculate plan" }));
+    expect(screen.getByText("Primary: Owner labor")).toBeTruthy();
+    const nearTie = screen.getByText(/Additional resources within the engine's near-tie range:/);
+    expect(nearTie.textContent).toContain("Laser A");
+    expect(nearTie.textContent).not.toContain("Owner labor");
+  });
+
+  it("omits the near-tie sentence when it contains only primary resources", () => {
+    setup(); selectAll();
+    fireEvent.change(screen.getByLabelText("Period label"), { target: { value: "Tied capacity" } });
+    fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-a" }), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Available owner labor hours"), { target: { value: "1.0666666666666667" } });
+    fireEvent.change(screen.getByLabelText("Available hours for Laser A"), { target: { value: "1.3333333333333333" } });
+    fireEvent.click(screen.getByRole("button", { name: "Calculate plan" }));
+    expect(screen.getByText("Primary: Owner labor, Laser A")).toBeTruthy();
+    expect(screen.queryByText(/near-tie range/)).toBeNull();
+  });
+
+  it("names and links every product affected by the same warning type", () => {
+    setup([saved("a", "First Product", { elapsedMinutes: 20 }), saved("b", "Second Product", { elapsedMinutes: 20 })]);
+    selectAll();
+    fireEvent.change(screen.getByLabelText("Period label"), { target: { value: "Warning check" } });
+    fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-a" }), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-b" }), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Calculate plan" }));
+    const warnings = screen.getByRole("heading", { name: "Warnings" }).closest("section");
+    expect(warnings).not.toBeNull();
+    expect(within(warnings).getByText("First Product:")).toBeTruthy();
+    expect(within(warnings).getByText("Second Product:")).toBeTruthy();
+    expect(within(warnings).getAllByText(/shorter than its 40-minute occupied primary-machine run/)).toHaveLength(2);
+    expect(within(warnings).getAllByRole("link", { name: "Review Production & Cash Profile" }).map((link) => link.getAttribute("href"))).toEqual([
+      "/products/a#production-cash-profile",
+      "/products/b#production-cash-profile",
+    ]);
+  });
+
   it("rejects fractional and negative batches through the engine", () => {
     setup(); selectAll();
     fireEvent.change(screen.getByLabelText("Period label"), { target: { value: "Week 1" } });
-    fireEvent.change(screen.getByLabelText("Planned complete batches", { selector: "#batches-a" }), { target: { value: "1.5" } });
-    fireEvent.change(screen.getByLabelText("Planned complete batches", { selector: "#batches-b" }), { target: { value: "-1" } });
+    fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-a" }), { target: { value: "1.5" } });
+    fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-b" }), { target: { value: "-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Calculate plan" }));
     expect(screen.getAllByText(/nonnegative safe whole number/)).toHaveLength(2);
   });
@@ -139,13 +187,13 @@ describe("PlanWorkspace scenario lifecycle", () => {
   it("invalidates a successful result when planned batches change", () => {
     setup(); fillValidPlan();
     expect(screen.getByRole("heading", { name: "Production plan results" })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Planned complete batches", { selector: "#batches-a" }), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Planned production: complete batches", { selector: "#batches-a" }), { target: { value: "3" } });
     expectCalculationInvalidated();
   });
 
   it("invalidates a successful result when a demand ceiling changes", () => {
     setup(); fillValidPlan();
-    fireEvent.change(screen.getByLabelText("Demand ceiling (optional)", { selector: "#demand-a" }), { target: { value: "6" } });
+    fireEvent.change(screen.getByLabelText("Demand ceiling assumption (optional)", { selector: "#demand-a" }), { target: { value: "6" } });
     expectCalculationInvalidated();
   });
 

@@ -46,6 +46,13 @@ describe("saved product editor", () => {
     expect(screen.getByLabelText("Setup labor per batch (minutes)")).toBeTruthy();
     expect(screen.getByLabelText("Active production labor per product (minutes)")).toBeTruthy();
     expect(screen.getByText(/do not change your recommended price/i)).toBeTruthy();
+    expect(screen.getByText(/pricing inputs describe per-sale economics/i)).toBeTruthy();
+    expect(screen.getByText(/separate from pricing-level per-sale machine and labor time/i)).toBeTruthy();
+    expect(screen.getByText(/machine occupied time is how long the primary machine is engaged/i)).toBeTruthy();
+    expect(screen.getByText(/observed total elapsed time is wall-clock duration/i)).toBeTruthy();
+    expect(screen.getByLabelText("Machine time in minutes")).toBeTruthy();
+    expect(screen.getByLabelText("Machine occupied time per batch (minutes)")).toBeTruthy();
+    expect(screen.getByLabelText("Observed total elapsed time per batch (minutes)")).toBeTruthy();
   });
 
   it("loads existing profile values including explicit zero", () => {

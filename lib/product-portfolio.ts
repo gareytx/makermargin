@@ -731,7 +731,7 @@ function explanationsFor(
   ].filter((value): value is string => Boolean(value));
   if (missing.length) explanations.push(`Capacity analysis is unavailable for ${missing.join(", ")}.`);
   const demandRisk = lines.filter(({ demand }) => demand?.status === "available" && demand.state === "excess");
-  if (demandRisk.length) explanations.push(`${demandRisk.length} product line${demandRisk.length === 1 ? "" : "s"} exceed user-supplied demand ceilings.`);
+  if (demandRisk.length) explanations.push(`${demandRisk.length} product line${demandRisk.length === 1 ? " exceeds" : "s exceed"} user-supplied demand ceilings.`);
   const warnings = lines.reduce((count, line) => count + line.readiness.warnings.length, 0);
   if (warnings) explanations.push(`${warnings} non-blocking data-quality warning${warnings === 1 ? "" : "s"} remain visible.`);
   return explanations;
