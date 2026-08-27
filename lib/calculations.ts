@@ -35,11 +35,27 @@ export type PricingValidation = {
   warnings: string[];
 };
 
+export type ViabilityFactorStatus = "strong" | "watch" | "weak";
+
+export type ViabilityFactor = {
+  id:
+    | "profit_margin"
+    | "hourly_earnings"
+    | "production_time"
+    | "shipping_burden";
+  label: string;
+  points: number;
+  maxPoints: number;
+  status: ViabilityFactorStatus;
+  explanation: string;
+};
+
 export type ProductViability = {
   score: number;
   label: string;
   summary: string;
   recommendation: string;
+  factors: ViabilityFactor[];
 };
 
 export type PricingCalculation =
@@ -193,37 +209,97 @@ export function calculatePricing(input: PricingInput): PricingCalculation {
   return { valid: true, result, validation };
 }
 
+export function scoreProfitMargin(profitMarginPercentage: number): ViabilityFactor {
+  let points = 4;
+  if (profitMarginPercentage >= 50) points = 30;
+  else if (profitMarginPercentage >= 40) points = 25;
+  else if (profitMarginPercentage >= 30) points = 20;
+  else if (profitMarginPercentage >= 20) points = 12;
+
+  return {
+    id: "profit_margin",
+    label: "Profit margin",
+    points,
+    maxPoints: 30,
+    status: points >= 25 ? "strong" : points >= 12 ? "watch" : "weak",
+    explanation: `${profitMarginPercentage.toFixed(1)}% profit margin earns ${points} of 30 viability points.`,
+  };
+}
+
+export function scoreHourlyEarnings(effectiveHourlyEarnings: number): ViabilityFactor {
+  let points = 2;
+  if (effectiveHourlyEarnings >= 40) points = 30;
+  else if (effectiveHourlyEarnings >= 30) points = 24;
+  else if (effectiveHourlyEarnings >= 20) points = 16;
+  else if (effectiveHourlyEarnings >= 10) points = 8;
+
+  return {
+    id: "hourly_earnings",
+    label: "Effective hourly earnings",
+    points,
+    maxPoints: 30,
+    status: points >= 24 ? "strong" : points >= 16 ? "watch" : "weak",
+    explanation: `${currency(effectiveHourlyEarnings)} effective hourly earnings earns ${points} of 30 viability points.`,
+  };
+}
+
+export function scoreProductionTime(totalMinutes: number): ViabilityFactor {
+  let points = 3;
+  if (totalMinutes <= 15) points = 20;
+  else if (totalMinutes <= 30) points = 16;
+  else if (totalMinutes <= 60) points = 12;
+  else if (totalMinutes <= 90) points = 7;
+
+  const formattedMinutes = Number.isInteger(totalMinutes)
+    ? totalMinutes.toString()
+    : totalMinutes.toFixed(1);
+
+  return {
+    id: "production_time",
+    label: "Production time",
+    points,
+    maxPoints: 20,
+    status: points >= 16 ? "strong" : points >= 7 ? "watch" : "weak",
+    explanation: `${formattedMinutes} minutes of combined machine and labor time earns ${points} of 20 viability points.`,
+  };
+}
+
+export function scoreShippingBurden(
+  customerPaysShipping: boolean,
+  shippingRatio: number
+): ViabilityFactor {
+  let points = 4;
+  if (customerPaysShipping || shippingRatio <= 0.1) points = 20;
+  else if (shippingRatio <= 0.15) points = 16;
+  else if (shippingRatio <= 0.25) points = 10;
+
+  return {
+    id: "shipping_burden",
+    label: "Shipping burden",
+    points,
+    maxPoints: 20,
+    status: points >= 16 ? "strong" : points >= 10 ? "watch" : "weak",
+    explanation: customerPaysShipping
+      ? "The customer pays shipping separately, earning 20 of 20 viability points."
+      : `Shipping is ${(shippingRatio * 100).toFixed(1)}% of the recommended selling price, earning ${points} of 20 viability points.`,
+  };
+}
+
 export function calculateViability(
   input: PricingInput,
   result: PricingResult
 ): ProductViability {
-  let score = 0;
-  if (result.profitMarginPercentage >= 50) score += 30;
-  else if (result.profitMarginPercentage >= 40) score += 25;
-  else if (result.profitMarginPercentage >= 30) score += 20;
-  else if (result.profitMarginPercentage >= 20) score += 12;
-  else score += 4;
-
-  if (result.effectiveHourlyEarnings >= 40) score += 30;
-  else if (result.effectiveHourlyEarnings >= 30) score += 24;
-  else if (result.effectiveHourlyEarnings >= 20) score += 16;
-  else if (result.effectiveHourlyEarnings >= 10) score += 8;
-  else score += 2;
-
   const totalMinutes = input.machineMinutes + input.laborMinutes;
-  if (totalMinutes <= 15) score += 20;
-  else if (totalMinutes <= 30) score += 16;
-  else if (totalMinutes <= 60) score += 12;
-  else if (totalMinutes <= 90) score += 7;
-  else score += 3;
-
   const shippingRatio = input.customerPaysShipping
     ? 0
     : input.shippingCost / result.recommendedPrice;
-  if (input.customerPaysShipping || shippingRatio <= 0.1) score += 20;
-  else if (shippingRatio <= 0.15) score += 16;
-  else if (shippingRatio <= 0.25) score += 10;
-  else score += 4;
+  const factors = [
+    scoreProfitMargin(result.profitMarginPercentage),
+    scoreHourlyEarnings(result.effectiveHourlyEarnings),
+    scoreProductionTime(totalMinutes),
+    scoreShippingBurden(input.customerPaysShipping, shippingRatio),
+  ];
+  const score = factors.reduce((sum, factor) => sum + factor.points, 0);
 
   let label = "Weak";
   if (score >= 85) label = "Excellent";
@@ -236,6 +312,7 @@ export function calculateViability(
       label,
       summary: "Low effective hourly earnings are the primary weakness.",
       recommendation: "Raise the price, reduce hands-on time, or batch production to improve hourly earnings.",
+      factors,
     };
   }
   if (shippingRatio > 0.25) {
@@ -244,6 +321,7 @@ export function calculateViability(
       label,
       summary: "High shipping burden is the primary weakness.",
       recommendation: "Consider separate shipping, bundles, or packaging changes before scaling.",
+      factors,
     };
   }
   if (totalMinutes > 90) {
@@ -252,6 +330,7 @@ export function calculateViability(
       label,
       summary: "Excessive production time is the primary weakness.",
       recommendation: "Simplify or batch the production process to improve throughput.",
+      factors,
     };
   }
   if (result.profitMarginPercentage < 30) {
@@ -260,6 +339,7 @@ export function calculateViability(
       label,
       summary: "Weak profit margin is the primary weakness.",
       recommendation: "Reduce costs or test a higher selling price before scaling.",
+      factors,
     };
   }
 
@@ -268,6 +348,7 @@ export function calculateViability(
     label,
     summary: "Strong overall economics with no major weakness identified.",
     recommendation: "This product is a good candidate for market testing and measured scaling.",
+    factors,
   };
 }
 
